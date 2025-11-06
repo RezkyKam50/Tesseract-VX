@@ -192,7 +192,7 @@ def draw_tracked_objects(frame, depth_colored, depth_map, online_targets):
                            FontConfig.FONT_FACE, FontConfig.DEPTH_TEXT_SCALE,
                            color, FontConfig.DEPTH_TEXT_THICKNESS)
                 
-                if avg_depth > 200:
+                if avg_depth > TrackArgs.PROXIMITY_THRESH:
                     cv2.putText(frame, "Proximity Alert", (x, y - 25),
                                FontConfig.FONT_FACE, FontConfig.DEPTH_TEXT_SCALE,
                                (0,0,255), FontConfig.DEPTH_TEXT_THICKNESS)

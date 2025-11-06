@@ -12,6 +12,7 @@ class TrackArgs:
     # Tracking parameters
     TRACK_THRESH = 0.5
     TRACK_BUFFER = 10
+    PROXIMITY_THRESH = 200
     MATCH_THRESH = 0.9
     ASPECT_RATIO_THRESH = 1.6
     MIN_BOX_AREA = 10
@@ -20,6 +21,8 @@ class TrackArgs:
     # Highlight style parameters
     HIGHLIGHT_ALPHA = 0.1   
     BORDER_THICKNESS = 1
+
+
 
 class FootageArgs:
     OUTPUT_DIR          = "./output_videos"
