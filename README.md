@@ -1,4 +1,4 @@
-**Pre-recorded TRT Inference w/ Proximity Alert (Proximity Thresh = avg_depth > 200 )**
+**TRT Inference w/ Proximity Alert (Red) (P = avg_depth > 200 )**
 
 ![Demo GIF](demo/demo.gif)
 
