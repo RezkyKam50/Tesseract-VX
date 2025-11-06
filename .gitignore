@@ -1,0 +1,17 @@
+__pycache__
+assets
+checkpoints
+onnx_models
+trt_models
+*.pth
+*.engine
+*.mp4
+build_opencv
+opencv
+*.pth.tar
+Video_Codec_SDK_*
+cudnn-*
+nv-codec-headers
+Python-*
+.venv
+
