@@ -2,14 +2,15 @@ class AppArgs:
     WINDOW_NAME = "Tesseract-VX"
 
 class ModelArgs:
-    # ByteTrack Model Configuration
+    # ByteTrack Model
     EXP_FILE = "./src/bytetrack/exp/yolox_tiny_mix_det.py"
     MOT_PATH = "./trt_models/bytetrack.pth"
     # MDE Model
     MDE_PATH = './trt_models/depth_anything_vitl-fp16.engine'
 
 class TrackArgs:
-    # Tracking parameters
+
+    # Perf.
     TRACK_THRESH = 0.5
     TRACK_BUFFER = 10
     PROXIMITY_THRESH = 200
@@ -18,7 +19,7 @@ class TrackArgs:
     MIN_BOX_AREA = 10
     FRAME_RATE = 120
 
-    # Highlight style parameters
+    # Misc.
     HIGHLIGHT_ALPHA = 0.1   
     BORDER_THICKNESS = 1
 
