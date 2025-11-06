@@ -1,4 +1,4 @@
-**Pre-recorded w/ Proximity Alert**
+**Pre-recorded TRT Inference w/ Proximity Alert**
 
 ![Demo GIF](demo/demo.gif)
 
