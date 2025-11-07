@@ -137,9 +137,14 @@ def process_depth_map(depth, frame_shape, stream):
     return depth_map, depth_colored
 
 
+@numba.jit(nopython=True, parallel=True)
+def count_dim(tlwh):
+    return [int(v) for v in tlwh]
+
 @numba.jit(nopython=True, fastmath=True, parallel=True)
 def get_depth_at_box(depth_map, tlwh):
-    x, y, w, h = [int(v) for v in tlwh]
+
+    x, y, w, h = count_dim(tlwh)
     if depth_map.size == 0 or w <= 0 or h <= 0:
         return cp.nan
     
@@ -165,9 +170,7 @@ def draw_transparent_highlight(img, x, y, w, h, color, alpha=TrackArgs.HIGHLIGHT
 
 @numba.jit(nopython=True)
 def count_vertical(tlwh):
-    vertical = tlwh[2] / tlwh[3] > TrackArgs.ASPECT_RATIO_THRESH 
-
-    return vertical
+    return tlwh[2] / tlwh[3] > TrackArgs.ASPECT_RATIO_THRESH 
 
 def draw_tracked_objects(frame, depth_colored, depth_map, online_targets):
     tracked_count = 0
@@ -178,7 +181,7 @@ def draw_tracked_objects(frame, depth_colored, depth_map, online_targets):
         
         if tlwh[2] * tlwh[3] > TrackArgs.MIN_BOX_AREA and not vertical:
             tracked_count += 1
-            x, y, w, h = [int(v) for v in tlwh]
+            x, y, w, h = count_dim(tlwh)
             color = FontConfig.THEMECOLORS[tid % len(FontConfig.THEMECOLORS)]
             draw_transparent_highlight(frame, x, y, w, h, color)
             draw_transparent_highlight(depth_colored, x, y, w, h, color)
