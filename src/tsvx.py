@@ -22,120 +22,149 @@ from tsvx_args import (
     AppArgs, ModelArgs, TrackArgs, FootageArgs, FontConfig)
 
 
-def check_cuda_support():
-    cuda_available = cv2.cuda.getCudaEnabledDeviceCount() > 0
-    print(f"OpenCV CUDA support: {cuda_available}")
-    if cuda_available:
-        print(f"CUDA device: {cv2.cuda.getDevice()}")
-    else:
-        print("CUDA not available, did you compile OpenCV with CUDA support?")
-        exit(1)
 
-    return cuda_available
+class Initialize:
+    def __init__(self, source, output_path):
 
-def initialize_video_source(source):
-    try:
-        device_id = int(source)
-        cap = cv2.VideoCapture(device_id)
-        source_type = "camera"
-        logger.info(f"Using camera device: {device_id}")
-    except ValueError:
-        if not osp.exists(source):
-            raise FileNotFoundError(f"Video file not found: {source}")
-        cap = cv2.VideoCapture(source)
-        source_type = "video"
-        logger.info(f"Using video file: {source}")
-    
-    if not cap.isOpened():
-        raise RuntimeError(f"Failed to open video source: {source}")
-     
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    
-    logger.info(f"Video properties: {width}x{height} @ {fps:.2f} fps")
-    if source_type == "video":
-        logger.info(f"Total frames: {total_frames}")
-    
-    return cap, source_type, fps, width, height, total_frames
+        self.source      = source
+        self.output_path = output_path
 
-def initialize_video_writer(output_path, fps, width, height):
-    output_dir = osp.dirname(output_path)
-    if output_dir:
-        os.makedirs(output_dir, exist_ok=True)
-     
-    combined_width = width * 2
-     
-    fourcc = cv2.VideoWriter_fourcc(*FootageArgs.VIDEO_CODEC)
-    writer = cv2.VideoWriter(output_path, fourcc, fps, (combined_width, height))
-    
-    if not writer.isOpened():
-        raise RuntimeError(f"Failed to create video writer: {output_path}")
-    
-    logger.info(f"Saving output to: {output_path}")
-    logger.info(f"Output resolution: {combined_width}x{height} @ {fps:.2f} fps")
-    
-    return writer
+    def check_cuda_support(self):
+        cuda_available = cv2.cuda.getCudaEnabledDeviceCount() > 0
+        print(f"OpenCV CUDA support: {cuda_available}")
+        if cuda_available:
+            print(f"CUDA device: {cv2.cuda.getDevice()}")
+        else:
+            print("CUDA not available, did you compile OpenCV with CUDA support?")
+            exit(1)
 
-def generate_output_path(input_source, output_arg):
-    if output_arg:
-        return output_arg
-    os.makedirs(FootageArgs.OUTPUT_DIR, exist_ok=True)
-    try:
-        int(input_source)
-        base_name = f"camera_{input_source}"
-    except ValueError:
-        base_name = Path(input_source).stem
-     
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    output_name = f"{base_name}_{timestamp}.mp4"
-    
-    return osp.join(FootageArgs.OUTPUT_DIR, output_name)
+        return cuda_available
 
-def load_mde_model():
-    return TRT_MDE(ModelArgs.MDE_PATH)
+    def initialize_video_source(self):
+        try:
+            device_id = int(self.source)
+            cap = cv2.VideoCapture(device_id)
+            source_type = "camera"
+            logger.info(f"Using camera device: {device_id}")
+        except ValueError:
+            if not osp.exists(self.source):
+                raise FileNotFoundError(f"Video file not found: {self.source}")
+            cap = cv2.VideoCapture(self.source)
+            source_type = "video"
+            logger.info(f"Using video file: {self.source}")
+        
+        if not cap.isOpened():
+            raise RuntimeError(f"Failed to open video source: {self.source}")
+        
+        fps             = cap.get(cv2.CAP_PROP_FPS)
+        width           = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height          = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        total_frames    = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        
+        logger.info(f"Video properties: {width}x{height} @ {fps:.2f} fps")
+        if source_type == "video":
+            logger.info(f"Total frames: {total_frames}")
+        
+        return cap, source_type, fps, width, height, total_frames
 
-def load_bytetrack_model():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    logger.info(f"Using device: {device}")
-    logger.info("Loading ByteTrack model configuration...")
-    exp = get_exp(ModelArgs.EXP_FILE, None)
-    model = exp.get_model().to(device)
-    logger.info("Model Summary: {}".format(get_model_info(model, exp.test_size)))
-    model.eval()
-    assert osp.exists(ModelArgs.MOT_PATH), f"TensorRT model not found at {ModelArgs.MOT_PATH}"
-    logger.info("Using TensorRT for ByteTrack inference")
-    model.head.decode_in_inference = False
-    decoder = model.head.decode_outputs
-    predictor = TORCH_MOT(model, exp, device, ModelArgs.MOT_PATH, decoder, fp16=False)
-    tracker = BYTETracker(frame_rate=TrackArgs.FRAME_RATE)
-    timer = Timer()
-    
-    return predictor, tracker, timer
+    def initialize_video_writer(self):
+
+        output                       = self.generate_output_path()
+        _, _, fps, width, height, _  = self.initialize_video_source(self.source)
+
+        output_dir = osp.dirname(output)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+        
+        combined_width = width * 2
+        
+        fourcc = cv2.VideoWriter_fourcc(*FootageArgs.VIDEO_CODEC)
+        writer = cv2.VideoWriter(output, fourcc, fps, (combined_width, height))
+        
+        if not writer.isOpened():
+            raise RuntimeError(f"Failed to create video writer: {output}")
+        
+        logger.info(f"Saving output to: {output}")
+        logger.info(f"Output resolution: {combined_width}x{height} @ {fps:.2f} fps")
+        
+        return writer
+
+    def generate_output_path(self):
+        if self.output_path:
+            return self.output_path
+        os.makedirs(FootageArgs.OUTPUT_DIR, exist_ok=True)
+        try:
+            int(self.source)
+            base_name = f"camera_{self.source}"
+        except ValueError:
+            base_name = Path(self.source).stem
+        
+        timestamp   = time.strftime("%Y%m%d_%H%M%S")
+        output_name = f"{base_name}_{timestamp}.mp4"
+        
+        return osp.join(FootageArgs.OUTPUT_DIR, output_name)
+
+
+class LoadModel:
+    def __init__(self):
+        pass
+
+    def mde_model(self):
+        return TRT_MDE(ModelArgs.MDE_PATH)
+
+    def bytetrack_model(self):
+
+        device  = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        logger.info(f"Using device: {device}")
+        logger.info("Loading ByteTrack model configuration...")
+
+        exp     = get_exp(ModelArgs.EXP_FILE, None)
+        model   = exp.get_model().to(device)
+
+        logger.info("Model Summary: {}".format(get_model_info(model, exp.test_size)))
+        model.eval()
+        assert osp.exists(ModelArgs.MOT_PATH), f"TensorRT model not found at {ModelArgs.MOT_PATH}"
+        logger.info("Using TensorRT for ByteTrack inference")
+        model.head.decode_in_inference = False
+
+        decoder     = model.head.decode_outputs
+        predictor   = TORCH_MOT(model, exp, device, ModelArgs.MOT_PATH, decoder, fp16=False)
+        tracker     = BYTETracker(frame_rate=TrackArgs.FRAME_RATE)
+        timer       = Timer()
+        
+        return predictor, tracker, timer
+
 
 
 @numba.jit(nopython=True)
 def depth_alpha_beta(min_val, max_val):
-    alpha = 255.0 / (max_val - min_val) if max_val > min_val else 1.0
-    beta = -min_val * alpha
+
+    alpha   = 255.0 / (max_val - min_val) if max_val > min_val else 1.0
+    beta    = -min_val * alpha
 
     return alpha, beta
 
 def process_depth_map(depth, frame_shape, stream):
-    gpu_depth = cv2.cuda_GpuMat()
+
+    gpu_depth               = cv2.cuda_GpuMat()
+    # -- offload -> gpu     : depth obj., lane
     gpu_depth.upload(depth, stream)
-    target_size = (frame_shape[1], frame_shape[0])
-    gpu_depth_resized = cv2.cuda.resize(gpu_depth, target_size, stream=stream)
-    depth_map = gpu_depth_resized.download(stream)
-    min_val, max_val, _, _ = cv2.cuda.minMaxLoc(gpu_depth_resized)
-    alpha, beta = depth_alpha_beta(min_val, max_val)
-    gpu_depth_normalized = gpu_depth_resized.convertTo(cv2.CV_8UC3, alpha, beta, stream)
-    depth_uint8 = gpu_depth_normalized.download(stream)
-    depth_colored = cv2.applyColorMap(depth_uint8, cv2.COLORMAP_BONE)
+    #
+    target_size             = (frame_shape[1], frame_shape[0])
+    gpu_depth_resized       = cv2.cuda.resize(gpu_depth, target_size, stream=stream)
+    # -- offload -> cpu     : resized
+    depth_map               = gpu_depth_resized.download(stream)
+    #
+    min_val, max_val, _, _  = cv2.cuda.minMaxLoc(gpu_depth_resized)
+    alpha, beta             = depth_alpha_beta(min_val, max_val)
+    gpu_depth_normalized    = gpu_depth_resized.convertTo(cv2.CV_8UC3, alpha, beta, stream=stream)
+    # -- offload -> cpu : normalized
+    depth_uint8             = gpu_depth_normalized.download(stream)
+    #
+    depth_colored           = cv2.applyColorMap(depth_uint8, cv2.COLORMAP_BONE)
 
     return depth_map, depth_colored
-
 
 @numba.jit(nopython=True, parallel=True)
 def count_dim(tlwh):
@@ -220,8 +249,7 @@ def create_combined_view(frame, depth_colored):
 
 @numba.jit(nopython=True)
 def calculate_fps(current_time, start_time):
-    elapsed = current_time - start_time
-    return 1.0 / (elapsed + 1e-6)  # Avoid division by zero
+    return 1.0 / ((current_time - start_time) + 1e-6)  # Avoid division by zero
 
 def print_controls(source_type, save_video):
     print("\nRunning ByteTrack with Depth Estimation...")
@@ -250,11 +278,12 @@ def depth_tracking_loop(cap, depth_trt_inference, bytetrack_predictor, bytetrack
             
             start_time = time.time()
             depth = depth_trt_inference.infer(frame)
-
             depth_map, depth_colored = process_depth_map(depth, frame.shape, stream)
-            outputs, img_info = bytetrack_predictor.inference(frame, bytetrack_timer)
+
+            outputs, img_info        = bytetrack_predictor.inference(frame, bytetrack_timer)
             
             tracked_count = 0
+
             if outputs[0] is not None:
                 online_targets = bytetrack_tracker.update(
                     outputs[0],
@@ -265,7 +294,8 @@ def depth_tracking_loop(cap, depth_trt_inference, bytetrack_predictor, bytetrack
                 bytetrack_timer.toc()
             else:
                 bytetrack_timer.toc()
-            fps = calculate_fps(time.time(), start_time)
+
+            fps      = calculate_fps(time.time(), start_time)
             draw_overlay_info(frame, fps, tracked_count, frame_id, total_frames)
             combined = create_combined_view(frame, depth_colored)
 
@@ -328,18 +358,25 @@ if __name__ == "__main__":
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     args = parse_args()
-    
-    check_cuda_support()
-     
-    depth_trt_inference = load_mde_model()
-    bytetrack_predictor, bytetrack_tracker, bytetrack_timer = load_bytetrack_model()
 
-    cap, source_type, fps, width, height, total_frames = initialize_video_source(args.source)
+    InitInstance = Initialize(
+        source      = args.source,
+        output_path = args.output
+    )
+    
+    InitInstance.check_cuda_support()
+     
+    depth_trt_inference = LoadModel.mde_model()
+    bytetrack_predictor, bytetrack_tracker, bytetrack_timer = LoadModel.bytetrack_model()
+
+
+    cap, source_type, fps, width, height, total_frames = InitInstance.initialize_video_source()
      
     video_writer = None
+
     if args.save_video:
-        output_path = generate_output_path(args.source, args.output)
-        video_writer = initialize_video_writer(output_path, fps, width, height)
+        output_path     = InitInstance.generate_output_path()
+        video_writer    = InitInstance.initialize_video_writer()
      
     stream = cv2.cuda.Stream()
     
@@ -356,6 +393,6 @@ if __name__ == "__main__":
     print(f"\nFinal stats:")
     print(f"  Total frames processed: {total_processed}")
     print(f"  Tracked objects in last frame: {final_count}")
-    if args.save_video:
-        print(f"  Output saved to: {output_path}")
+ 
+        
  
