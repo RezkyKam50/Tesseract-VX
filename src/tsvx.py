@@ -145,26 +145,43 @@ def depth_alpha_beta(min_val, max_val):
 
     return alpha, beta
 
-def process_depth_map(depth, frame_shape, stream):
+def _resize_depth(gpu_depth, frame_shape, stream, offload):
+    target_size             = (frame_shape[1], frame_shape[0])
+    gpu_depth_resized       = cv2.cuda.resize(gpu_depth, target_size, stream=stream)
+
+    if offload:
+        # -- offload -> cpu     : resized
+        depth_map               = gpu_depth_resized.download(stream)
+
+    return depth_map, gpu_depth_resized
+
+def _normalize_depth(gpu_depth_resized, alpha, beta, stream, offload):
+    gpu_depth_normalized    = gpu_depth_resized.convertTo(cv2.CV_8UC3, alpha, beta, stream=stream)
+
+    if offload:
+        # -- offload -> cpu : normalized
+        depth_colored           = cv2.applyColorMap(
+            gpu_depth_normalized.download(stream), cv2.COLORMAP_BONE)
+
+    return depth_colored
+
+def process_depth_map(depth, frame_shape, stream, offload=False):
 
     gpu_depth               = cv2.cuda_GpuMat()
     # -- offload -> gpu     : depth obj., lane
     gpu_depth.upload(depth, stream)
     #
-    target_size             = (frame_shape[1], frame_shape[0])
-    gpu_depth_resized       = cv2.cuda.resize(gpu_depth, target_size, stream=stream)
-    # -- offload -> cpu     : resized
-    depth_map               = gpu_depth_resized.download(stream)
+    depth_map, gpu_depth_resized = _resize_depth(
+        gpu_depth, frame_shape, stream, offload=offload)
     #
     min_val, max_val, _, _  = cv2.cuda.minMaxLoc(gpu_depth_resized)
     alpha, beta             = depth_alpha_beta(min_val, max_val)
-    gpu_depth_normalized    = gpu_depth_resized.convertTo(cv2.CV_8UC3, alpha, beta, stream=stream)
-    # -- offload -> cpu : normalized
-    depth_uint8             = gpu_depth_normalized.download(stream)
-    #
-    depth_colored           = cv2.applyColorMap(depth_uint8, cv2.COLORMAP_BONE)
+
+    depth_colored = _normalize_depth(
+        gpu_depth_resized, alpha, beta, stream, offload=offload)
 
     return depth_map, depth_colored
+
 
 @numba.jit(nopython=True, parallel=True)
 def count_dim(tlwh):
