@@ -24,6 +24,9 @@ from tsvx_args import (
 
 
 class Initialize:
+    '''
+    Init for Flight-check
+    '''
     def __init__(self, source, output_path):
 
         self.source      = source
@@ -33,9 +36,9 @@ class Initialize:
         cuda_available = cv2.cuda.getCudaEnabledDeviceCount() > 0
         print(f"OpenCV CUDA support: {cuda_available}")
         if cuda_available:
-            print(f"CUDA device: {cv2.cuda.getDevice()}")
+            print(f"Found CUDA device/s: {cv2.cuda.getDevice()}")
         else:
-            print("CUDA not available, did you compile OpenCV with CUDA support?")
+            print("CUDA support not available, did you compile OpenCV with CUDA support?")
             exit(1)
 
         return cuda_available
@@ -106,6 +109,9 @@ class Initialize:
 
 
 class LoadModel:
+    '''
+    TSVX MDE & MOT Loader, Consist of Vanilla TRT (MDE) and PyTorch TRT (MOT)
+    '''
     def __init__(self):
         pass
 
@@ -136,212 +142,250 @@ class LoadModel:
         return predictor, tracker, timer
 
 
-
-@numba.jit(nopython=True)
-def depth_alpha_beta(min_val, max_val):
-
-    alpha   = 255.0 / (max_val - min_val) if max_val > min_val else 1.0
-    beta    = -min_val * alpha
-
-    return alpha, beta
-
-def _resize_depth(gpu_depth, frame_shape, stream, offload):
-    target_size             = (frame_shape[1], frame_shape[0])
-    gpu_depth_resized       = cv2.cuda.resize(gpu_depth, target_size, stream=stream)
-
-    if offload:
-        # -- offload -> cpu     : resized
-        depth_map               = gpu_depth_resized.download(stream)
-
-    return depth_map, gpu_depth_resized
-
-def _normalize_depth(gpu_depth_resized, alpha, beta, stream, offload):
-    gpu_depth_normalized    = gpu_depth_resized.convertTo(cv2.CV_8UC3, alpha, beta, stream=stream)
-
-    if offload:
-        # -- offload -> cpu : normalized
-        depth_colored           = cv2.applyColorMap(
-            gpu_depth_normalized.download(stream), cv2.COLORMAP_BONE)
-
-    return depth_colored
-
-def process_depth_map(depth, frame_shape, stream, offload=False):
-
-    gpu_depth               = cv2.cuda_GpuMat()
-    # -- offload -> gpu     : depth obj., lane
-    gpu_depth.upload(depth, stream)
-    #
-    depth_map, gpu_depth_resized = _resize_depth(
-        gpu_depth, frame_shape, stream, offload=offload)
-    #
-    min_val, max_val, _, _  = cv2.cuda.minMaxLoc(gpu_depth_resized)
-    alpha, beta             = depth_alpha_beta(min_val, max_val)
-
-    depth_colored = _normalize_depth(
-        gpu_depth_resized, alpha, beta, stream, offload=offload)
-
-    return depth_map, depth_colored
-
-
-@numba.jit(nopython=True, parallel=True)
-def count_dim(tlwh):
-    return [int(v) for v in tlwh]
-
-@numba.jit(nopython=True, fastmath=True, parallel=True)
-def get_depth_at_box(depth_map, tlwh):
-
-    x, y, w, h = count_dim(tlwh)
-    if depth_map.size == 0 or w <= 0 or h <= 0:
-        return cp.nan
-    
-    x = max(0, min(x, depth_map.shape[1] - 1))
-    y = max(0, min(y, depth_map.shape[0] - 1))
-    w = min(w, depth_map.shape[1] - x)
-    h = min(h, depth_map.shape[0] - y)
-    
-    if w <= 0 or h <= 0:
-        return cp.nan
-    
-    region = depth_map[y:y+h, x:x+w]    # vectorized ops. can be parallelized
-    total = np.sum(region)
-    count = region.size
-    
-    return total / count if count > 0 else cp.nan
-
-def draw_transparent_highlight(img, x, y, w, h, color, alpha=TrackArgs.HIGHLIGHT_ALPHA, border_thickness=TrackArgs.BORDER_THICKNESS):
-    overlay = img.copy()
-    cv2.rectangle(overlay, (x, y), (x + w, y + h), color, -1)
-    cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0, img)
-    cv2.rectangle(img, (x, y), (x + w, y + h), color, border_thickness)
-
-@numba.jit(nopython=True)
-def count_vertical(tlwh):
-    return tlwh[2] / tlwh[3] > TrackArgs.ASPECT_RATIO_THRESH 
-
-def draw_tracked_objects(frame, depth_colored, depth_map, online_targets):
-    tracked_count = 0
-    for t in online_targets:
-        tlwh = t.tlwh
-        tid = t.track_id
-        vertical = count_vertical(tlwh)
+class DepthProcess:
+    '''
+    MDE Instance for RT Depth Estimation
+    '''
+    def __init__(self, optimize, offload):
         
-        if tlwh[2] * tlwh[3] > TrackArgs.MIN_BOX_AREA and not vertical:
-            tracked_count += 1
-            x, y, w, h = count_dim(tlwh)
-            color = FontConfig.THEMECOLORS[tid % len(FontConfig.THEMECOLORS)]
-            draw_transparent_highlight(frame, x, y, w, h, color)
-            draw_transparent_highlight(depth_colored, x, y, w, h, color)
-            avg_depth = get_depth_at_box(depth_map, tlwh)
-            if avg_depth is not None:
-                depth_text = f"ID: {tid} | distance: {avg_depth:.2f}"
-                cv2.putText(frame, depth_text, (x, y - 10),
-                           FontConfig.FONT_FACE, FontConfig.DEPTH_TEXT_SCALE,
-                           color, FontConfig.DEPTH_TEXT_THICKNESS)
-                cv2.putText(depth_colored, depth_text, (x, y - 10),
-                           FontConfig.FONT_FACE, FontConfig.DEPTH_TEXT_SCALE,
-                           color, FontConfig.DEPTH_TEXT_THICKNESS)
-                
-                if avg_depth > TrackArgs.PROXIMITY_THRESH:
-                    cv2.putText(frame, "Proximity Alert", (x, y - 25),
-                               FontConfig.FONT_FACE, FontConfig.DEPTH_TEXT_SCALE,
-                               (0,0,255), FontConfig.DEPTH_TEXT_THICKNESS)
-    
-    return tracked_count
+        self.offload = offload
+        self.depth_alpha_beta_jit = numba.jit(nopython=optimize)(self.depth_alpha_beta)
 
-def draw_overlay_info(frame, fps, num_trackers, frame_id=None, total_frames=None):
-    cv2.putText(frame, f"FPS: {fps:.2f}", (20, 40),
-                FontConfig.FONT_FACE, FontConfig.FPS_SCALE,
-                FontConfig.FPS_COLOR, FontConfig.FPS_THICKNESS)
-    cv2.putText(frame, f"Tracked: {num_trackers}", (20, 70),
-                FontConfig.FONT_FACE, FontConfig.TRACKER_INFO_SCALE,
-                FontConfig.TRACKER_INFO_COLOR, FontConfig.TRACKER_INFO_THICKNESS)
-    if frame_id is not None and total_frames is not None and total_frames > 0:
-        progress_text = f"Frame: {frame_id}/{total_frames}"
-        cv2.putText(frame, progress_text, (20, 100),
+    def process_depth_map(self, depth, frame_shape, stream):
+
+        gpu_depth               = cv2.cuda_GpuMat()
+        # -- offload -> gpu     : depth obj., lane
+        gpu_depth.upload(depth, stream)
+        #
+        depth_map, gpu_depth_resized = self.resize_depth(
+            gpu_depth, frame_shape, stream)
+        #
+        min_val, max_val, _, _  = cv2.cuda.minMaxLoc(gpu_depth_resized)
+        alpha, beta             = self.depth_alpha_beta_jit(min_val, max_val)
+
+        depth_colored = self.normalize_depth(
+            gpu_depth_resized, alpha, beta, stream)
+
+        return depth_map, depth_colored
+
+    def depth_alpha_beta(self, min_val, max_val):
+
+        alpha   = 255.0 / (max_val - min_val) if max_val > min_val else 1.0
+        beta    = -min_val * alpha
+
+        return alpha, beta
+
+    def resize_depth(self, gpu_depth, frame_shape, stream):
+        target_size             = (frame_shape[1], frame_shape[0])
+        gpu_depth_resized       = cv2.cuda.resize(gpu_depth, target_size, stream=stream)
+
+        if self.offload is True:
+            # -- offload -> cpu     : resized
+            depth_map               = gpu_depth_resized.download(stream)
+        else:
+            depth_map               = gpu_depth_resized
+
+        return depth_map, gpu_depth_resized
+
+    def normalize_depth(self, gpu_depth_resized, alpha, beta, stream):
+        gpu_depth_normalized    = gpu_depth_resized.convertTo(cv2.CV_8UC3, alpha, beta, stream=stream)
+
+        if self.offload is True:
+            # -- offload -> cpu : normalized
+            depth_colored           = cv2.applyColorMap(
+                gpu_depth_normalized.download(stream), cv2.COLORMAP_BONE)
+        else:
+            depth_colored           = cv2.applyColorMap(
+                gpu_depth_normalized, cv2.COLORMAP_BONE)
+
+        return depth_colored
+
+
+
+class TrackerProcess:
+    '''
+    MOT Instance for RT Multi-Object Tracking
+    '''
+    def __init__(self, optimize, parallelism):
+
+        self.box_depth_jit      = numba.jit(nopython=optimize, parallel=parallelism)(self.get_depth_at_box)
+        self.count_dim_jit      = numba.jit(nopython=optimize)(self.count_dim)
+        self.count_vertical_jit = numba.jit(nopython=optimize)(self.count_vertical)
+        
+    def count_dim(self, tlwh):
+        return [int(v) for v in tlwh]
+
+    def get_depth_at_box(self, depth_map, tlwh):
+
+        x, y, w, h = self.count_dim_jit(tlwh)
+
+        if depth_map.size == 0 or w <= 0 or h <= 0:
+            return cp.nan
+        
+        x = max(0, min(x, depth_map.shape[1] - 1))
+        y = max(0, min(y, depth_map.shape[0] - 1))
+        w = min(w, depth_map.shape[1] - x)
+        h = min(h, depth_map.shape[0] - y)
+        
+        if w <= 0 or h <= 0:
+            return cp.nan
+        
+        region = depth_map[y:y+h, x:x+w]    # vectorized ops. can be parallelized
+        total = np.sum(region)
+        count = region.size
+        
+        return total / count if count > 0 else cp.nan
+
+    def draw_transparent_highlight(self, img, x, y, w, h, color, alpha=TrackArgs.HIGHLIGHT_ALPHA, border_thickness=TrackArgs.BORDER_THICKNESS):
+        overlay = img.copy()
+        cv2.rectangle(overlay, (x, y), (x + w, y + h), color, -1)
+        cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0, img)
+        cv2.rectangle(img, (x, y), (x + w, y + h), color, border_thickness)
+
+    def count_vertical(tlwh):
+        return tlwh[2] / tlwh[3] > TrackArgs.ASPECT_RATIO_THRESH 
+
+    def draw_tracked_objects(self, frame, depth_colored, depth_map, online_targets):
+        tracked_count = 0
+        for t in online_targets:
+            tlwh = t.tlwh
+            tid = t.track_id
+
+            vertical = self.count_vertical_jit(tlwh)
+
+            if tlwh[2] * tlwh[3] > TrackArgs.MIN_BOX_AREA and not vertical:
+                tracked_count += 1
+                x, y, w, h = self.count_dim(tlwh)
+                color = FontConfig.THEMECOLORS[tid % len(FontConfig.THEMECOLORS)]
+                self.draw_transparent_highlight(frame, x, y, w, h, color)
+                self.draw_transparent_highlight(depth_colored, x, y, w, h, color)
+
+                avg_depth = self.box_depth_jit(depth_map, tlwh)
+
+                if avg_depth is not None:
+                    depth_text = f"ID: {tid} | distance: {avg_depth:.2f}"
+                    cv2.putText(frame, depth_text, (x, y - 10),
+                            FontConfig.FONT_FACE, FontConfig.DEPTH_TEXT_SCALE,
+                            color, FontConfig.DEPTH_TEXT_THICKNESS)
+                    cv2.putText(depth_colored, depth_text, (x, y - 10),
+                            FontConfig.FONT_FACE, FontConfig.DEPTH_TEXT_SCALE,
+                            color, FontConfig.DEPTH_TEXT_THICKNESS)
+                    
+                    if avg_depth > TrackArgs.PROXIMITY_THRESH:
+                        cv2.putText(frame, "Proximity Alert", (x, y - 25),
+                                FontConfig.FONT_FACE, FontConfig.DEPTH_TEXT_SCALE,
+                                (0,0,255), FontConfig.DEPTH_TEXT_THICKNESS)
+        
+        return tracked_count
+
+
+        
+class TSVX:
+    '''
+    MOT & MDE Wrapper Instance for TesseractVX
+    '''
+    def __init__(self, optimize, parallelism, offload):
+
+        self.TrackerInstance = TrackerProcess(optimize=optimize, parallelism=parallelism)
+        self.DepthInstance   = DepthProcess(optimize=optimize, offload=offload)
+
+        self.calculate_fps_jit = numba.jit(nopython=optimize)(self.calculate_fps)
+
+    def create_combined_view(self, frame, depth_colored):
+        return cv2.hconcat([frame, depth_colored])
+
+    def calculate_fps(self, current_time, start_time):
+        return 1.0 / ((current_time - start_time) + 1e-6)   
+
+    def print_controls(self, source_type, save_video):
+        print("\nRunning ByteTrack with Depth Estimation...")
+        print(f"Source type: {source_type}")
+        print(f"Saving video: {'Yes' if save_video else 'No'}")
+        print("\nControls:")
+        print("  'q' - quit")
+        if source_type == "video":
+            print("  'space' - pause/resume")
+
+    def depth_tracking_loop(self, cap, depth_trt_inference, bytetrack_predictor, bytetrack_tracker, 
+                                bytetrack_timer, stream, video_writer=None, source_type="camera", 
+                                total_frames=0, display=True):
+        frame_id = 0
+        paused = False
+
+        while True:
+            if not paused:
+                ret, frame = cap.read()
+                if not ret:
+                    if source_type == "video":
+                        logger.info("End of video reached")
+                    else:
+                        logger.warning("Frame capture failed")
+                    break
+                
+                start_time = time.time()
+                depth = depth_trt_inference.infer(frame)
+                depth_map, depth_colored = self.DepthInstance.process_depth_map(depth, frame.shape, stream)
+
+                outputs, img_info        = bytetrack_predictor.inference(frame, bytetrack_timer)
+                
+                tracked_count = 0
+
+                if outputs[0] is not None:
+                    online_targets = bytetrack_tracker.update(
+                        outputs[0],
+                        [img_info['height'], img_info['width']],
+                        bytetrack_predictor.test_size
+                    )
+                    tracked_count = self.TrackerInstance.draw_tracked_objects(frame, depth_colored, depth_map, online_targets)
+                    bytetrack_timer.toc()
+                else:
+                    bytetrack_timer.toc()
+
+                fps        = self.calculate_fps_jit(time.time(), start_time)
+
+                self.draw_overlay_info(frame, fps, tracked_count, frame_id, total_frames)
+                combined = self.create_combined_view(frame, depth_colored)
+
+                if video_writer is not None:
+                    video_writer.write(combined)
+                
+                if display:
+                    cv2.imshow(AppArgs.WINDOW_NAME, combined)
+                
+                frame_id += 1
+            
+            if display:
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q'):
+                    break
+                elif key == ord(' ') and source_type == "video":
+                    paused = not paused
+                    logger.info(f"Video {'paused' if paused else 'resumed'}")
+            else:
+                continue
+        
+        return tracked_count, frame_id
+
+    def draw_overlay_info(self, frame, fps, num_trackers, frame_id=None, total_frames=None):
+        cv2.putText(frame, f"FPS: {fps:.2f}", (20, 40),
+                    FontConfig.FONT_FACE, FontConfig.FPS_SCALE,
+                    FontConfig.FPS_COLOR, FontConfig.FPS_THICKNESS)
+        cv2.putText(frame, f"Tracked: {num_trackers}", (20, 70),
                     FontConfig.FONT_FACE, FontConfig.TRACKER_INFO_SCALE,
                     FontConfig.TRACKER_INFO_COLOR, FontConfig.TRACKER_INFO_THICKNESS)
-        
-def create_combined_view(frame, depth_colored):
-    return cv2.hconcat([frame, depth_colored])
+        if frame_id is not None and total_frames is not None and total_frames > 0:
+            progress_text = f"Frame: {frame_id}/{total_frames}"
+            cv2.putText(frame, progress_text, (20, 100),
+                        FontConfig.FONT_FACE, FontConfig.TRACKER_INFO_SCALE,
+                        FontConfig.TRACKER_INFO_COLOR, FontConfig.TRACKER_INFO_THICKNESS)
 
-@numba.jit(nopython=True)
-def calculate_fps(current_time, start_time):
-    return 1.0 / ((current_time - start_time) + 1e-6)  # Avoid division by zero
+    def cleanup(self, cap, video_writer=None):
+        cap.release()
+        if video_writer is not None:
+            video_writer.release()
+            logger.info("Video saved successfully")
+        cv2.destroyAllWindows()
 
-def print_controls(source_type, save_video):
-    print("\nRunning ByteTrack with Depth Estimation...")
-    print(f"Source type: {source_type}")
-    print(f"Saving video: {'Yes' if save_video else 'No'}")
-    print("\nControls:")
-    print("  'q' - quit")
-    if source_type == "video":
-        print("  'space' - pause/resume")
-
-def depth_tracking_loop(cap, depth_trt_inference, bytetrack_predictor, bytetrack_tracker, 
-                            bytetrack_timer, stream, video_writer=None, source_type="camera", 
-                            total_frames=0, display=True):
-    frame_id = 0
-    paused = False
-    
-    while True:
-        if not paused:
-            ret, frame = cap.read()
-            if not ret:
-                if source_type == "video":
-                    logger.info("End of video reached")
-                else:
-                    logger.warning("Frame capture failed")
-                break
-            
-            start_time = time.time()
-            depth = depth_trt_inference.infer(frame)
-            depth_map, depth_colored = process_depth_map(depth, frame.shape, stream)
-
-            outputs, img_info        = bytetrack_predictor.inference(frame, bytetrack_timer)
-            
-            tracked_count = 0
-
-            if outputs[0] is not None:
-                online_targets = bytetrack_tracker.update(
-                    outputs[0],
-                    [img_info['height'], img_info['width']],
-                    bytetrack_predictor.test_size
-                )
-                tracked_count = draw_tracked_objects(frame, depth_colored, depth_map, online_targets)
-                bytetrack_timer.toc()
-            else:
-                bytetrack_timer.toc()
-
-            fps      = calculate_fps(time.time(), start_time)
-            draw_overlay_info(frame, fps, tracked_count, frame_id, total_frames)
-            combined = create_combined_view(frame, depth_colored)
-
-            if video_writer is not None:
-                video_writer.write(combined)
-             
-            if display:
-                cv2.imshow(AppArgs.WINDOW_NAME, combined)
-            
-            frame_id += 1
-         
-        if display:
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q'):
-                break
-            elif key == ord(' ') and source_type == "video":
-                paused = not paused
-                logger.info(f"Video {'paused' if paused else 'resumed'}")
-        else:
-            continue
-    
-    return tracked_count, frame_id
-
-def cleanup(cap, video_writer=None):
-    cap.release()
-    if video_writer is not None:
-        video_writer.release()
-        logger.info("Video saved successfully")
-    cv2.destroyAllWindows()
 
 def parse_args():
     parser = argparse.ArgumentParser(description="ByteTrack with Depth Estimation")
@@ -367,6 +411,22 @@ def parse_args():
         action="store_true",
         help="Save output video"
     )
+    parser.add_argument(
+        "--parallel",
+        action="store_true",
+        help="Enable CPU Parallelism"
+    )
+    parser.add_argument(
+        "--optimize",
+        action="store_true",
+        help="Enable LLVM"
+    )
+    parser.add_argument(
+        "--offload",
+        action="store_true",
+        help="Enable GPU to CPU Offloading"
+    )
+
     return parser.parse_args()
 
 if __name__ == "__main__":
@@ -381,32 +441,36 @@ if __name__ == "__main__":
         output_path = args.output
     )
     
+    MainInstance = TSVX(
+        optimize    = args.optimize if args.optimize else False,
+        parallelism = args.parallel if args.parallel else False,
+        offload     = args.offload if args.offload else False
+    )
+
     InitInstance.check_cuda_support()
      
     depth_trt_inference = LoadModel.mde_model()
     bytetrack_predictor, bytetrack_tracker, bytetrack_timer = LoadModel.bytetrack_model()
-
 
     cap, source_type, fps, width, height, total_frames = InitInstance.initialize_video_source()
      
     video_writer = None
 
     if args.save_video:
-        output_path     = InitInstance.generate_output_path()
         video_writer    = InitInstance.initialize_video_writer()
      
     stream = cv2.cuda.Stream()
     
-    print_controls(source_type, args.save_video)
+    MainInstance.print_controls(source_type, args.save_video)
      
-    final_count, total_processed = depth_tracking_loop(
+    final_count, total_processed = MainInstance.depth_tracking_loop(
         cap, depth_trt_inference, 
         bytetrack_predictor, bytetrack_tracker, bytetrack_timer,
         stream, video_writer, source_type, total_frames,
         display=not args.no_display
     )
     
-    cleanup(cap, video_writer)
+    MainInstance.cleanup(cap, video_writer)
     print(f"\nFinal stats:")
     print(f"  Total frames processed: {total_processed}")
     print(f"  Tracked objects in last frame: {final_count}")

@@ -23,8 +23,6 @@ class TrackArgs:
     HIGHLIGHT_ALPHA = 0.1   
     BORDER_THICKNESS = 1
 
-
-
 class FootageArgs:
     OUTPUT_DIR          = "./output_videos"
     DEFAULT_OUTPUT_NAME = "tracked_output.mp4"
