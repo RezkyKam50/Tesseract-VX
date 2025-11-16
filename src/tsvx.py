@@ -73,7 +73,7 @@ class Initialize:
     def initialize_video_writer(self):
 
         output                       = self.generate_output_path()
-        _, _, fps, width, height, _  = self.initialize_video_source(self.source)
+        _, _, fps, width, height, _  = self.initialize_video_source()
 
         output_dir = osp.dirname(output)
         if output_dir:
