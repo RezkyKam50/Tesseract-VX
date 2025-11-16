@@ -6,7 +6,7 @@ trt_models
 *.pth
 *.engine
 *.mp4
-build_opencv
+build_opencv/
 opencv
 *.pth.tar
 Video_Codec_SDK_*
@@ -15,6 +15,8 @@ nv-codec-headers
 Python-*/
 .venv/
 *.tar.xz
+Python-*
+.venv
 
 
 
