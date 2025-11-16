@@ -14,7 +14,7 @@ cd ffmpeg
 
 ./configure --enable-nonfree --enable-cuda-nvcc --extra-cflags=-I/usr/local/cuda/include --extra-ldflags=-L/usr/local/cuda/lib64 --disable-static --enable-shared
 
-make -j 16
+make -j$(nproc --all)
 
 echo "WARN: this will install ffmpeg system-wide"
 sudo make install
