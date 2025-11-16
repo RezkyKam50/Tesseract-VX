@@ -12,6 +12,9 @@ opencv
 Video_Codec_SDK_*
 cudnn-*
 nv-codec-headers
-Python-*
-.venv
+Python-*/
+.venv/
+
+
+
 
