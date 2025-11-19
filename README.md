@@ -3,6 +3,8 @@
 ![Demo GIF](demo/demo.gif)
 
 > Left: Object Track, Right: Depth Estimation
+> Relative distance were simply calculated by summing the average depth value inside the bounding box.
+> Getting the absolute (Real) distance can be done by calibrating average depth with measures, though its quiet tricky due to difference in focal length.
 
 **Fedora 42 Setup**
 
