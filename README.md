@@ -1,5 +1,7 @@
 **TRT Inference w/ Proximity Alert (Red) (P = avg_depth > 200 )**
 
+** *Working on bounding box collision.
+
 ![Demo GIF](demo/demo.gif)
 
 > Left: Object Track, Right: Depth Estimation
@@ -26,24 +28,24 @@ Source the exact version 13.0 CUDA Toolkit
 
 Build OpenCV from source with CUDA enabled
 
-> sudo chmod +x ./scripts/setup/build_cv_cuda.sh &&./scripts/setup/build_cv_cuda.sh
+> sudo chmod +x ./scripts/setup/build_cv_cuda.sh && ./scripts/setup/build_cv_cuda.sh
 
 Depending on your Distro, install "uv" package manager systemwide, this is crucial for dependencies resolving.
 
-> sudo chmod +x ./scripts/setup/setup_dav-2.sh &&./scripts/setup/setup_dav-2.sh
+> sudo chmod +x ./scripts/setup/setup_dav-2.sh && ./scripts/setup/setup_dav-2.sh
 
-> sudo chmod +x ./scripts/setup/setup_tensorrt.sh &&./scripts/setup/setup_tensorrt.sh
+> sudo chmod +x ./scripts/setup/setup_tensorrt.sh && ./scripts/setup/setup_tensorrt.sh
 
 Under 'checkpoints' directory, there should be the weight of the models pulled from HF **fresh ovenbaked**.
 The default script is hardcoded for 'vitl' for Large size.
 
 Convert HF to ONNX
 
-> python3 ./utils/onnx_conv.py
+> python3 ./src/bytetrack/utils/onnx_conv.py
 
 Convert ONNX to TensorRT (.engine)
 
-> python3 ./utils/onnx_tensorrt.py
+> python3 ./src/bytetrack/utils/onnx_tensorrt.py
 
 Now, the MDE model is fresh ovenbaked, lets continue to baking the ByteTracker model.
 
