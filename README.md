@@ -26,16 +26,13 @@ Source the exact version 13.0 CUDA Toolkit
 
 Build OpenCV from source with CUDA enabled
 
-> sudo chmod +x ./scripts/setup/build_cv_cuda.sh
-> ./scripts/setup/build_cv_cuda.sh
+> sudo chmod +x ./scripts/setup/build_cv_cuda.sh &&./scripts/setup/build_cv_cuda.sh
 
 Depending on your Distro, install "uv" package manager systemwide, this is crucial for dependencies resolving.
 
-> sudo chmod +x ./scripts/setup/setup_dav-2.sh
-> ./scripts/setup/setup_dav-2.sh
+> sudo chmod +x ./scripts/setup/setup_dav-2.sh &&./scripts/setup/setup_dav-2.sh
 
-> sudo chmod +x ./scripts/setup/setup_tensorrt.sh
-> ./scripts/setup/setup_tensorrt.sh
+> sudo chmod +x ./scripts/setup/setup_tensorrt.sh &&./scripts/setup/setup_tensorrt.sh
 
 Under 'checkpoints' directory, there should be the weight of the models pulled from HF **fresh ovenbaked**.
 The default script is hardcoded for 'vitl' for Large size.
