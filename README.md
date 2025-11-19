@@ -14,28 +14,28 @@ Getting the absolute (Real) distance can be done by calibrating average depth wi
 
 Start by compiling OpenCV from source first, this ensures you have CUDA enabled CV libraries .**You need the latest CUDA Toolkit (13.0) for this**
 
-> sudo chmod +x ./scripts/gcc_switcher.sh
+> sudo chmod +x ./scripts/setup/gcc_switcher.sh
 
 You need gcc-14 and g++-14 on your system wide environment
 
-> ./scripts/gcc_switcher.sh
+> ./scripts/setup/gcc_switcher.sh
 
 Source the exact version 13.0 CUDA Toolkit
 
-> sudo chmod +x ./scripts/cuda_toolkit.sh
+> sudo chmod +x ./scripts/setup/cuda_toolkit.sh
 
 Build OpenCV from source with CUDA enabled
 
-> sudo chmod +x ./scripts/build_cv_cuda.sh
-> ./scripts/build_cv_cuda.sh
+> sudo chmod +x ./scripts/setup/build_cv_cuda.sh
+> ./scripts/setup/build_cv_cuda.sh
 
 Depending on your Distro, install "uv" package manager systemwide, this is crucial for dependencies resolving.
 
-> sudo chmod +x ./scripts/setup_dav-2.sh
-> ./scripts/setup_dav-2.sh
+> sudo chmod +x ./scripts/setup/setup_dav-2.sh
+> ./scripts/setup/setup_dav-2.sh
 
-> sudo chmod +x ./scripts/setup_tensorrt.sh
-> ./scripts/setup_tensorrt.sh
+> sudo chmod +x ./scripts/setup/setup_tensorrt.sh
+> ./scripts/setup/setup_tensorrt.sh
 
 Under 'checkpoints' directory, there should be the weight of the models pulled from HF **fresh ovenbaked**.
 The default script is hardcoded for 'vitl' for Large size.
@@ -63,7 +63,7 @@ convert from .pth to TRT .pth (this will produce .pth and .engine) but we'll use
 Check first that theres model in each of those folders and every step runs smoothly without error.
 Now run:
 
-> sudo chmod +x spectralgraph.sh && ./spectralgraph.sh
+> sudo chmod +x tsvx.sh && ./tsvx.sh
 
 # Citation
 
