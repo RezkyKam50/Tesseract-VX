@@ -18,7 +18,6 @@ class TRT_MDE:
         self.inputs = []
         self.outputs = []
         self.bindings = []
-        self.stream = cuda.Stream(flags=1)
          
         for i in range(self.engine.num_io_tensors):
             tensor_name = self.engine.get_tensor_name(i)
@@ -46,7 +45,7 @@ class TRT_MDE:
                     'shape': shape
                 })
     
-    def infer(self, input_image):
+    def infer(self, input_image, stream):
         input_shape = self.inputs[0]['shape']
         input_h = input_shape[2] if input_shape[2] > 0 else 518
         input_w = input_shape[3] if input_shape[3] > 0 else 518
@@ -71,17 +70,17 @@ class TRT_MDE:
         self.context.set_input_shape(self.inputs[0]['name'], img.shape)
          
         np.copyto(self.inputs[0]['host'], img.ravel())
-        cuda.memcpy_htod_async(self.inputs[0]['device'], self.inputs[0]['host'], self.stream)
+        cuda.memcpy_htod_async(self.inputs[0]['device'], self.inputs[0]['host'], stream)
          
         for inp in self.inputs:
             self.context.set_tensor_address(inp['name'], int(inp['device']))
         for out in self.outputs:
             self.context.set_tensor_address(out['name'], int(out['device']))
          
-        self.context.execute_async_v3(stream_handle=self.stream.handle)
+        self.context.execute_async_v3(stream_handle=stream.handle)
          
-        cuda.memcpy_dtoh_async(self.outputs[0]['host'], self.outputs[0]['device'], self.stream)
-        self.stream.synchronize()
+        cuda.memcpy_dtoh_async(self.outputs[0]['host'], self.outputs[0]['device'], stream)
+        stream.synchronize()
          
         output_shape = self.context.get_tensor_shape(self.outputs[0]['name'])
         depth = self.outputs[0]['host'].reshape(output_shape)

@@ -1,14 +1,11 @@
-import os, os.path as osp
+import os, os.path as osp, time, sys
 import argparse
 from pathlib import Path
-import time
+ 
 from loguru import logger
-
-import cv2
-import torch
-import cupy as cp
-import numpy  as np
-import numba
+ 
+import torch, cv2
+import cupy as cp, numpy  as np, numba
 
 from bytetrack.yolox.exp                  import get_exp
 from bytetrack.yolox.utils                import get_model_info
@@ -17,6 +14,9 @@ from bytetrack.yolox.tracking_utils.timer import Timer
  
 from bytetrack.mot_engine import TORCH_MOT
 from mde.mde_engine       import TRT_MDE
+
+import pycuda.driver as cuda
+import pycuda.autoinit
 
 from tsvx_args import (
     AppArgs, ModelArgs, TrackArgs, FootageArgs, FontConfig)
@@ -39,11 +39,11 @@ class Initialize:
             print(f"Found CUDA device/s: {cv2.cuda.getDevice()}")
         else:
             print("CUDA support not available, did you compile OpenCV with CUDA support?")
-            exit(1)
+            sys.exit(1)
 
         return cuda_available
 
-    def initialize_video_source(self):
+    def initialize_video_source(self, debugging):
         try:
             device_id = int(self.source)
             cap = cv2.VideoCapture(device_id)
@@ -64,10 +64,11 @@ class Initialize:
         height          = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         total_frames    = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         
-        logger.info(f"Video properties: {width}x{height} @ {fps:.2f} fps")
-        if source_type == "video":
-            logger.info(f"Total frames: {total_frames}")
-        
+        if debugging is True and isinstance(self.source, str) and (os.path.sep in self.source or '/' in self.source):
+            logger.info(f"Video properties: {width}x{height} @ {fps:.2f} fps")
+            if source_type == "video":
+                logger.info(f"Total frames: {total_frames}")
+            
         return cap, source_type, fps, width, height, total_frames
 
     def initialize_video_writer(self):
@@ -113,14 +114,19 @@ class LoadModel:
     TSVX MDE & MOT Loader, Consist of Vanilla TRT (MDE) and PyTorch TRT (MOT)
     '''
     def __init__(self):
-        pass
+
+        Initialize.check_cuda_support()
 
     def mde_model(self):
         return TRT_MDE(ModelArgs.MDE_PATH)
 
     def bytetrack_model(self):
 
-        device  = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if not torch.cuda.is_available():
+            print("CUDA Compatible device is required to run MOT, exiting...")
+            exit(1)
+
+        device  = torch.device("cuda")
 
         logger.info(f"Using device: {device}")
         logger.info("Loading ByteTrack model configuration...")
@@ -160,6 +166,7 @@ class DepthProcess:
         depth_map, gpu_depth_resized = self.resize_depth(
             gpu_depth, frame_shape, stream)
         #
+        stream.synchronize()
         min_val, max_val, _, _  = cv2.cuda.minMaxLoc(gpu_depth_resized)
         alpha, beta             = self.depth_alpha_beta_jit(min_val, max_val)
 
@@ -209,8 +216,8 @@ class TrackerProcess:
     def __init__(self, optimize, parallelism):
 
         self.box_depth_jit      = numba.jit(nopython=optimize, parallel=parallelism)(self.get_depth_at_box)
-        self.count_dim_jit      = numba.jit(nopython=optimize)(self.count_dim)
-        self.count_vertical_jit = numba.jit(nopython=optimize)(self.count_vertical)
+        self.count_dim_jit      = numba.jit(nopython=optimize)                      (self.count_dim)
+        self.count_vertical_jit = numba.jit(nopython=optimize)                      (self.count_vertical)
         
     def count_dim(self, tlwh):
         return [int(v) for v in tlwh]
@@ -286,8 +293,8 @@ class TSVX:
     '''
     def __init__(self, optimize, parallelism, offload):
 
-        self.TrackerInstance = TrackerProcess(optimize=optimize, parallelism=parallelism)
-        self.DepthInstance   = DepthProcess(optimize=optimize, offload=offload)
+        self.TrackerInstance = TrackerProcess   (optimize=optimize, parallelism=parallelism)
+        self.DepthInstance   = DepthProcess     (optimize=optimize, offload=offload)
 
         self.calculate_fps_jit = numba.jit(nopython=optimize)(self.calculate_fps)
 
@@ -307,7 +314,7 @@ class TSVX:
             print("  'space' - pause/resume")
 
     def depth_tracking_loop(self, cap, depth_trt_inference, bytetrack_predictor, bytetrack_tracker, 
-                                bytetrack_timer, stream, video_writer=None, source_type="camera", 
+                                bytetrack_timer, stream_0, stream_1, video_writer=None, source_type="camera", 
                                 total_frames=0, display=True):
         frame_id = 0
         paused = False
@@ -323,8 +330,9 @@ class TSVX:
                     break
                 
                 start_time = time.time()
-                depth = depth_trt_inference.infer(frame)
-                depth_map, depth_colored = self.DepthInstance.process_depth_map(depth, frame.shape, stream)
+                depth = depth_trt_inference.infer(frame, stream_0)  
+                depth_map, depth_colored = self.DepthInstance.process_depth_map(depth, frame.shape, stream_1)
+                stream_1.synchronize() 
 
                 outputs, img_info        = bytetrack_predictor.inference(frame, bytetrack_timer)
                 
@@ -426,6 +434,12 @@ def parse_args():
         action="store_true",
         help="Enable GPU to CPU Offloading"
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debugging"
+    )
+
 
     return parser.parse_args()
 
@@ -444,29 +458,34 @@ if __name__ == "__main__":
     MainInstance = TSVX(
         optimize    = args.optimize if args.optimize else False,
         parallelism = args.parallel if args.parallel else False,
-        offload     = args.offload if args.offload else False
+        offload     = args.offload  if args.offload else False,
+        # debug       = args.debug    if args.debug else False, // TODO: add debug interface for every instances
     )
-
-    InitInstance.check_cuda_support()
      
     depth_trt_inference = LoadModel.mde_model()
     bytetrack_predictor, bytetrack_tracker, bytetrack_timer = LoadModel.bytetrack_model()
 
-    cap, source_type, fps, width, height, total_frames = InitInstance.initialize_video_source()
+    cap, source_type, fps, width, height, total_frames = InitInstance.initialize_video_source(args.debug)
      
     video_writer = None
 
     if args.save_video:
         video_writer    = InitInstance.initialize_video_writer()
-     
-    stream = cv2.cuda.Stream()
     
+    # lane for MDE infer
+    stream_0 = cuda.Stream()
+    # lane for separate depth processing after MDE infer 
+    # Infer -> Depth Process -> BBProcess, haven't benchmarked the benefit of 
+    # this additional stream yet.
+    stream_1 = cuda.Stream()
+    # TODO: add stream to each instance for encapsulation
+
     MainInstance.print_controls(source_type, args.save_video)
      
     final_count, total_processed = MainInstance.depth_tracking_loop(
         cap, depth_trt_inference, 
         bytetrack_predictor, bytetrack_tracker, bytetrack_timer,
-        stream, video_writer, source_type, total_frames,
+        stream_0, stream_1, video_writer, source_type, total_frames,
         display=not args.no_display
     )
     
