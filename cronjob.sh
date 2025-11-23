@@ -33,5 +33,5 @@ git add .
  
 if ! git diff-index --quiet HEAD --; then
     git commit -m "$(generate_commit_message)"
-    git push
+    git push --force
 fi

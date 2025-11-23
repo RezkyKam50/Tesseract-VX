@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os, os.path as osp, time, sys
 import argparse
 from pathlib import Path
@@ -5,7 +7,7 @@ from pathlib import Path
 from loguru import logger
  
 import torch, cv2
-import cupy as cp, numpy  as np, numba
+import cupy as cp, numpy as np, numba
 
 from bytetrack.yolox.exp                  import get_exp
 from bytetrack.yolox.utils                import get_model_info
@@ -19,26 +21,39 @@ import pycuda.driver as cuda
 import pycuda.autoinit
 
 from tsvx_args import (
-    AppArgs, ModelArgs, TrackArgs, FootageArgs, FontConfig)
-
+    AppArgs, ModelArgs, TrackArgs, FootageArgs, FontConfig, parse_args)
 
 
 class Initialize:
     '''
     Init for Flight-check
     '''
-    def __init__(self, source, output_path):
+    def __init__(
+            self, 
+            source, 
+            output_path, 
+            cuda_device, 
+            qt_platform,
+            nv_prime,
+            glx_vendor
+        ):
 
         self.source      = source
         self.output_path = output_path
 
+        os.environ["QT_QPA_PLATFORM"]           = f"{qt_platform}"
+        os.environ["CUDA_VISIBLE_DEVICES"]      = f"{cuda_device}"
+        os.environ["NV_PRIME_RENDER_OFFLOAD"]   = "1" if nv_prime else "0"
+        os.environ["__GLX_VENDOR_LIBRARY_NAME"] = f"{glx_vendor}"
+
     def check_cuda_support(self):
         cuda_available = cv2.cuda.getCudaEnabledDeviceCount() > 0
         print(f"OpenCV CUDA support: {cuda_available}")
-        if cuda_available:
-            print(f"Found CUDA device/s: {cv2.cuda.getDevice()}")
+
+        if cuda_available and torch.cuda.is_available():
+            print(f"Found CUDA device/s: {torch.cuda.device_count()}")
         else:
-            print("CUDA support not available, did you compile OpenCV with CUDA support?")
+            print("One of OpenCV or PyTorch CUDA support is unavailable. Exiting...")
             sys.exit(1)
 
         return cuda_available
@@ -77,6 +92,7 @@ class Initialize:
         _, _, fps, width, height, _  = self.initialize_video_source(self.source)
 
         output_dir = osp.dirname(output)
+
         if output_dir:
             os.makedirs(output_dir, exist_ok=True)
         
@@ -121,11 +137,6 @@ class LoadModel:
         return TRT_MDE(ModelArgs.MDE_PATH)
 
     def bytetrack_model(self):
-
-        if not torch.cuda.is_available():
-            print("CUDA Compatible device is required to run MOT, exiting...")
-            exit(1)
-
         device  = torch.device("cuda")
 
         logger.info(f"Using device: {device}")
@@ -227,7 +238,7 @@ class TrackerProcess:
         x, y, w, h = self.count_dim_jit(tlwh)
 
         if depth_map.size == 0 or w <= 0 or h <= 0:
-            return cp.nan
+            return np.nan
         
         x = max(0, min(x, depth_map.shape[1] - 1))
         y = max(0, min(y, depth_map.shape[0] - 1))
@@ -235,13 +246,13 @@ class TrackerProcess:
         h = min(h, depth_map.shape[0] - y)
         
         if w <= 0 or h <= 0:
-            return cp.nan
+            return np.nan
         
         region = depth_map[y:y+h, x:x+w]    # vectorized ops. can be parallelized
         total = np.sum(region)
         count = region.size
         
-        return total / count if count > 0 else cp.nan
+        return total / count if count > 0 else np.nan
 
     def draw_transparent_highlight(self, img, x, y, w, h, color, alpha=TrackArgs.HIGHLIGHT_ALPHA, border_thickness=TrackArgs.BORDER_THICKNESS):
         overlay = img.copy()
@@ -269,23 +280,35 @@ class TrackerProcess:
 
                 avg_depth = self.box_depth_jit(depth_map, tlwh)
 
-                if avg_depth is not None:
-                    depth_text = f"ID: {tid} | distance: {avg_depth:.2f}"
-                    cv2.putText(frame, depth_text, (x, y - 10),
-                            FontConfig.FONT_FACE, FontConfig.DEPTH_TEXT_SCALE,
-                            color, FontConfig.DEPTH_TEXT_THICKNESS)
-                    cv2.putText(depth_colored, depth_text, (x, y - 10),
-                            FontConfig.FONT_FACE, FontConfig.DEPTH_TEXT_SCALE,
-                            color, FontConfig.DEPTH_TEXT_THICKNESS)
-                    
-                    if avg_depth > TrackArgs.PROXIMITY_THRESH:
-                        cv2.putText(frame, "Proximity Alert", (x, y - 25),
-                                FontConfig.FONT_FACE, FontConfig.DEPTH_TEXT_SCALE,
-                                (0,0,255), FontConfig.DEPTH_TEXT_THICKNESS)
-        
+                self.render_text_overlay(avg_depth, tid, x, y, frame, depth_colored, color)
+                
         return tracked_count
-
-
+    
+    def render_text_overlay(self, avg_depth, tid, x, y, frame, depth_colored, color):
+        if avg_depth is not None:
+            depth_text = f"ID: {tid} | distance: {avg_depth:.2f}"
+            cv2.putText(frame, depth_text, (x, y - 10),
+                    FontConfig.FONT_FACE, FontConfig.DEPTH_TEXT_SCALE,
+                    color, FontConfig.DEPTH_TEXT_THICKNESS)
+            cv2.putText(depth_colored, depth_text, (x, y - 10),
+                    FontConfig.FONT_FACE, FontConfig.DEPTH_TEXT_SCALE,
+                    color, FontConfig.DEPTH_TEXT_THICKNESS)
+            
+            if avg_depth > TrackArgs.PROXIMITY_THRESH:
+                cv2.putText(frame, "Proximity Alert", (x, y - 25),
+                        FontConfig.FONT_FACE, FontConfig.DEPTH_TEXT_SCALE,
+                        (0,0,255), FontConfig.DEPTH_TEXT_THICKNESS)
+            del depth_text
+                
+        elif avg_depth is None or (isinstance(avg_depth, float) and np.isnan(avg_depth)):
+            depth_text = f"ID: {tid} | distance: N/A"
+            cv2.putText(frame, depth_text, (x, y - 10),
+                    FontConfig.FONT_FACE, FontConfig.DEPTH_TEXT_SCALE,
+                    color, FontConfig.DEPTH_TEXT_THICKNESS)
+            cv2.putText(depth_colored, depth_text, (x, y - 10),
+                    FontConfig.FONT_FACE, FontConfig.DEPTH_TEXT_SCALE,
+                    color, FontConfig.DEPTH_TEXT_THICKNESS)
+            del depth_text
         
 class TSVX:
     '''
@@ -341,7 +364,10 @@ class TSVX:
                 if outputs[0] is not None:
                     online_targets = bytetrack_tracker.update(
                         outputs[0],
-                        [img_info['height'], img_info['width']],
+                        [
+                        img_info['height'], 
+                        img_info['width']
+                        ],
                         bytetrack_predictor.test_size
                     )
                     tracked_count = self.TrackerInstance.draw_tracked_objects(frame, depth_colored, depth_map, online_targets)
@@ -395,70 +421,23 @@ class TSVX:
         cv2.destroyAllWindows()
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="ByteTrack with Depth Estimation")
-    parser.add_argument(
-        "--source", 
-        type=str, 
-        default="0",
-        help="Video source: camera ID (e.g., 0) or path to MP4 file"
-    )
-    parser.add_argument(
-        "--output",
-        type=str,
-        default=None,
-        help="Output video path (default: auto-generated in output_videos/)"
-    )
-    parser.add_argument(
-        "--no-display",
-        action="store_true",
-        help="Run without displaying video (faster processing)"
-    )
-    parser.add_argument(
-        "--save-video",
-        action="store_true",
-        help="Save output video"
-    )
-    parser.add_argument(
-        "--parallel",
-        action="store_true",
-        help="Enable CPU Parallelism"
-    )
-    parser.add_argument(
-        "--optimize",
-        action="store_true",
-        help="Enable LLVM"
-    )
-    parser.add_argument(
-        "--offload",
-        action="store_true",
-        help="Enable GPU to CPU Offloading"
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debugging"
-    )
-
-
-    return parser.parse_args()
-
 if __name__ == "__main__":
-
-    os.environ["QT_QPA_PLATFORM"] = "xcb"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     args = parse_args()
 
     InitInstance = Initialize(
         source      = args.source,
-        output_path = args.output
+        output_path = args.output,
+        cuda_device = AppArgs.CUDA_DEVICE,
+        qt_platform = AppArgs.QT_PLATFORM,
+        nv_prime    = AppArgs.NV_PRIME,
+        glx_vendor  = AppArgs.GLX_VENDOR
     )
     
     MainInstance = TSVX(
-        optimize    = args.optimize if args.optimize else False,
-        parallelism = args.parallel if args.parallel else False,
-        offload     = args.offload  if args.offload else False,
+        optimize    = args.optimize if args.optimize    else False,
+        parallelism = args.parallel if args.parallel    else False,
+        offload     = args.offload  if args.offload     else False,
         # debug       = args.debug    if args.debug else False, // TODO: add debug interface for every instances
     )
      
@@ -478,7 +457,6 @@ if __name__ == "__main__":
     # Infer -> Depth Process -> BBProcess, haven't benchmarked the benefit of 
     # this additional stream yet.
     stream_1 = cuda.Stream()
-    # TODO: add stream to each instance for encapsulation
 
     MainInstance.print_controls(source_type, args.save_video)
      

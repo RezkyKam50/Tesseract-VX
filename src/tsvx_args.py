@@ -1,5 +1,9 @@
 class AppArgs:
     WINDOW_NAME = "Tesseract-VX"
+    CUDA_DEVICE = 0
+    QT_PLATFORM = "xcb"     # options: "xcb", "offscreen"
+    NV_PRIME    = False     # for hybrid boards (NVIDIA Optimus)
+    GLX_VENDOR  = "nvidia"  # options: "nvidia"
 
 class ModelArgs:
     # ByteTrack Model
@@ -49,3 +53,53 @@ class FontConfig:
         # (128, 255, 0),  # Light Green
         # (255, 128, 0),  # Orange
     ]
+
+def parse_args():
+    import argparse
+    parser = argparse.ArgumentParser(description="ByteTrack with Depth Estimation")
+    parser.add_argument(
+        "--source", 
+        type=str, 
+        default="0",
+        help="Video source: camera ID (e.g., 0) or path to MP4 file"
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=None,
+        help="Output video path (default: auto-generated in output_videos/)"
+    )
+    parser.add_argument(
+        "--no-display",
+        action="store_true",
+        help="Run without displaying video (faster processing)"
+    )
+    parser.add_argument(
+        "--save-video",
+        action="store_true",
+        help="Save output video"
+    )
+    parser.add_argument(
+        "--parallel",
+        action="store_true",
+        help="Enable CPU Parallelism"
+    )
+    parser.add_argument(
+        "--optimize",
+        action="store_true",
+        help="Enable LLVM"
+    )
+    parser.add_argument(
+        "--offload",
+        action="store_true",
+        help="Enable GPU to CPU Offloading"
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debugging"
+    )
+
+
+    return parser.parse_args()
+
