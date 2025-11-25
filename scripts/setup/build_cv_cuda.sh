@@ -18,24 +18,6 @@ export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 source ./scripts/setup/cuda_toolkit.sh
 source ./scripts/setup/gcc_switcher.sh
 source .venv/bin/activate
-
-if [ ! -d "opencv" ]; then
-    git clone https://github.com/opencv/opencv.git
-
-else
-  echo "OpenCV repo already exists, skipping."
-fi
-
-cd ./opencv
- 
-if [ ! -d "contrib" ]; then
-    git submodule add -b master https://github.com/opencv/opencv_contrib.git contrib
-    git submodule update --init --recursive
-else
-    echo "Contrib submodule already exists, skipping."
-fi
- 
-cd ..
  
 sudo rm -rf build_opencv
 mkdir -p build_opencv
@@ -62,7 +44,7 @@ cmake ../opencv \
   -D WITH_FFMPEG=ON \
   -D BUILD_opencv_videoio=ON \
   -D ENABLE_CCACHE=ON \
-  -D OPENCV_EXTRA_MODULES_PATH=../opencv/contrib/modules \
+  -D OPENCV_EXTRA_MODULES_PATH=../contrib/modules \
   -D BUILD_opencv_python3=ON \
   -D PYTHON3_EXECUTABLE=$(which python3) \
   -D PYTHON3_INCLUDE_DIR=$(python3 -c "from sysconfig import get_paths; print(get_paths()['include'])") \

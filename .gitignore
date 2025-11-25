@@ -8,7 +8,6 @@ trt_models
 *.engine
 *.mp4
 build_opencv/
-opencv
 *.pth.tar
 Video_Codec_SDK_*
 cudnn-*
