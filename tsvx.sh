@@ -1,5 +1,5 @@
 export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-
+source .venv/bin/activate
 source ./scripts/setup/cv_lib.sh
 
 export PYTHONPATH="${PYTHONPATH}:${PWD}/src/bytetrack"

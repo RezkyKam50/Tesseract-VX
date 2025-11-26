@@ -8,3 +8,6 @@
 	path = contrib
 	url = https://github.com/opencv/opencv_contrib.git
 	branch = master
+[submodule "tensorrt"]
+	path = tensorrt
+	url = https://github.com/NVIDIA/TensorRT.git

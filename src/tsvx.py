@@ -23,7 +23,6 @@ import pycuda.autoinit
 from tsvx_args import (
     AppArgs, ModelArgs, TrackArgs, FootageArgs, FontConfig, parse_args)
 
-
 class Initialize:
     '''
     Init for Flight-check
@@ -157,7 +156,6 @@ class LoadModel:
         timer       = Timer()
         
         return predictor, tracker, timer
-
 
 class DepthProcess:
     '''

@@ -1,3 +1,8 @@
+#!/bin/bash
+set -e
+
+# optional setup for NVIDIA GPU Codec SDK (NVENC/NVDEC)
+
 if [ ! -d "./Video_Codec_SDK_*" ] && [ -z "$(find . -maxdepth 1 -type d -name 'Video_Codec_SDK_*' -print -quit)" ]; then
     echo "FATAL: SDK directory not found on $PWD"
     echo "Download on https://developer.nvidia.com/nvidia-video-codec-sdk/download"

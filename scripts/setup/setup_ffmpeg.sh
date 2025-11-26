@@ -1,7 +1,10 @@
+#!/bin/bash
+set -e
+
+# optional setup for ffmpeg with nvcuvid/nvenc support
+
 echo "depending on the distro, if you have ffmpeg installed, check if its the non-patented version or else execute this script for cuda build and remove the non-patented version"
 echo "To use this version of ffmpeg: "export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH""
-
-
 
 source ./scripts/cuda_toolkit.sh
 source ./scripts/gcc_switcher.sh
