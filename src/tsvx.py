@@ -307,17 +307,88 @@ class TrackerProcess:
                     FontConfig.FONT_FACE, FontConfig.DEPTH_TEXT_SCALE,
                     color, FontConfig.DEPTH_TEXT_THICKNESS)
             del depth_text
-        
+
+
+# USE THESE FOR REFERENCE :
+
+# def parse_args():
+#     import argparse
+#     parser = argparse.ArgumentParser(description="ByteTrack with Depth Estimation")
+#     parser.add_argument(
+#         "--source", 
+#         type=str, 
+#         default="0",
+#         help="Video source: camera ID (e.g., 0) or path to MP4 file"
+#     )
+#     parser.add_argument(
+#         "--output",
+#         type=str,
+#         default=None,
+#         help="Output video path (default: auto-generated in output_videos/)"
+#     )
+#     parser.add_argument(
+#         "--no-display",
+#         action="store_true",
+#         help="Run without displaying video (faster processing)"
+#     )
+#     parser.add_argument(
+#         "--save-video",
+#         action="store_true",
+#         help="Save output video"
+#     )
+#     parser.add_argument(
+#         "--parallel",
+#         action="store_true",
+#         help="Enable CPU Parallelism"
+#     )
+#     parser.add_argument(
+#         "--optimize",
+#         action="store_true",
+#         help="Enable LLVM"
+#     )
+#     parser.add_argument(
+#         "--offload",
+#         action="store_true",
+#         help="Enable GPU to CPU Offloading"
+#     )
+#     parser.add_argument(
+#         "--debug",
+#         action="store_true",
+#         help="Enable debugging"
+#     )
+
+
+#     return parser.parse_args()
+
+
 class TSVX:
     '''
     MOT & MDE Wrapper Instance for TesseractVX
     '''
-    def __init__(self, optimize, parallelism, offload):
+    def __init__(self, Init, LoadIns, args):
+        self.args = args
 
-        self.TrackerInstance = TrackerProcess   (optimize=optimize, parallelism=parallelism)
-        self.DepthInstance   = DepthProcess     (optimize=optimize, offload=offload)
+        self.TrackerInstance = TrackerProcess(optimize=args.optimize, parallelism=args.parallel)
+        self.DepthInstance = DepthProcess(optimize=args.optimize, offload=args.offload)
 
-        self.calculate_fps_jit = numba.jit(nopython=optimize)(self.calculate_fps)
+        self.calculate_fps_jit = numba.jit(nopython=args.optimize)(self.calculate_fps)
+
+        self.cap, self.source_type, self.fps, self.width, self.height, self.total_frames = Init.initialize_video_source(debugging=args.debug)
+
+        self.depth_trt_inference = LoadIns.mde_model()
+        self.bytetrack_predictor, self.bytetrack_tracker, self.bytetrack_timer = LoadIns.bytetrack_model()
+
+        self.video_writer = None
+
+        if args.save_video:
+            self.video_writer = Init.initialize_video_writer()
+
+        # lane for MDE infer
+        self.stream_0 = cuda.Stream()
+        # lane for separate depth processing after MDE infer 
+        # Infer -> Depth Process -> BBProcess, haven't benchmarked the benefit of 
+        # this additional stream yet.
+        self.stream_1 = cuda.Stream()
 
     def create_combined_view(self, frame, depth_colored):
         return cv2.hconcat([frame, depth_colored])
@@ -325,78 +396,76 @@ class TSVX:
     def calculate_fps(self, current_time, start_time):
         return 1.0 / ((current_time - start_time) + 1e-6)   
 
-    def print_controls(self, source_type, save_video):
+    def print_controls(self):
         print("\nRunning ByteTrack with Depth Estimation...")
-        print(f"Source type: {source_type}")
-        print(f"Saving video: {'Yes' if save_video else 'No'}")
+        print(f"Source type: {self.source_type}")
+        print(f"Saving video: {'Yes' if self.args.save_video else 'No'}")
         print("\nControls:")
         print("  'q' - quit")
-        if source_type == "video":
+        if self.source_type == "video":
             print("  'space' - pause/resume")
 
-    def depth_tracking_loop(self, cap, depth_trt_inference, bytetrack_predictor, bytetrack_tracker, 
-                                bytetrack_timer, stream_0, stream_1, video_writer=None, source_type="camera", 
-                                total_frames=0, display=True):
-        frame_id = 0
-        paused = False
+    def depth_tracking_loop(self):
+        self.frame_id = 0
+        self.paused = False
 
         while True:
-            if not paused:
-                ret, frame = cap.read()
+            if not self.paused:
+                ret, frame = self.cap.read()
                 if not ret:
-                    if source_type == "video":
+                    if self.source_type == "video":
                         logger.info("End of video reached")
                     else:
                         logger.warning("Frame capture failed")
                     break
                 
-                start_time = time.time()
-                depth = depth_trt_inference.infer(frame, stream_0)  
-                depth_map, depth_colored = self.DepthInstance.process_depth_map(depth, frame.shape, stream_1)
-                stream_1.synchronize() 
+                self.start_time = time.time()
+                depth = self.depth_trt_inference.infer(frame, self.stream_0)  
+                depth_map, depth_colored = self.DepthInstance.process_depth_map(depth, frame.shape, self.stream_1)
+                self.stream_1.synchronize() 
 
-                outputs, img_info        = bytetrack_predictor.inference(frame, bytetrack_timer)
+                outputs, img_info = self.bytetrack_predictor.inference(frame, self.bytetrack_timer)
                 
-                tracked_count = 0
+                self.tracked_count = 0
 
                 if outputs[0] is not None:
-                    online_targets = bytetrack_tracker.update(
+                    online_targets = self.bytetrack_tracker.update(
                         outputs[0],
                         [
                         img_info['height'], 
                         img_info['width']
                         ],
-                        bytetrack_predictor.test_size
+                        self.bytetrack_predictor.test_size
                     )
-                    tracked_count = self.TrackerInstance.draw_tracked_objects(frame, depth_colored, depth_map, online_targets)
-                    bytetrack_timer.toc()
+                    self.tracked_count = self.TrackerInstance.draw_tracked_objects(frame, depth_colored, depth_map, online_targets)
+                    self.bytetrack_timer.toc()
                 else:
-                    bytetrack_timer.toc()
+                    self.bytetrack_timer.toc()
 
-                fps        = self.calculate_fps_jit(time.time(), start_time)
+                self.fps = self.calculate_fps_jit(time.time(), self.start_time)
 
-                self.draw_overlay_info(frame, fps, tracked_count, frame_id, total_frames)
+                self.draw_overlay_info(frame, self.fps, self.tracked_count, self.frame_id, self.total_frames)
                 combined = self.create_combined_view(frame, depth_colored)
 
-                if video_writer is not None:
-                    video_writer.write(combined)
+                if self.video_writer is not None:
+                    self.video_writer.write(combined)
                 
-                if display:
+                if not self.args.no_display:
                     cv2.imshow(AppArgs.WINDOW_NAME, combined)
                 
-                frame_id += 1
+                self.frame_id += 1
             
-            if display:
+            if not self.args.no_display:
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q'):
                     break
-                elif key == ord(' ') and source_type == "video":
-                    paused = not paused
-                    logger.info(f"Video {'paused' if paused else 'resumed'}")
+                elif key == ord(' ') and self.source_type == "video":
+                    self.paused = not self.paused
+                    logger.info(f"Video {'paused' if self.paused else 'resumed'}")
             else:
                 continue
         
-        return tracked_count, frame_id
+        return self.tracked_count, self.frame_id
 
     def draw_overlay_info(self, frame, fps, num_trackers, frame_id=None, total_frames=None):
         cv2.putText(frame, f"FPS: {fps:.2f}", (20, 40),
@@ -411,12 +480,13 @@ class TSVX:
                         FontConfig.FONT_FACE, FontConfig.TRACKER_INFO_SCALE,
                         FontConfig.TRACKER_INFO_COLOR, FontConfig.TRACKER_INFO_THICKNESS)
 
-    def cleanup(self, cap, video_writer=None):
-        cap.release()
-        if video_writer is not None:
-            video_writer.release()
+    def cleanup(self):
+        self.cap.release()
+        if self.video_writer is not None:
+            self.video_writer.release()
             logger.info("Video saved successfully")
         cv2.destroyAllWindows()
+
 
 
 if __name__ == "__main__":
@@ -431,42 +501,21 @@ if __name__ == "__main__":
         nv_prime    = AppArgs.NV_PRIME,
         glx_vendor  = AppArgs.GLX_VENDOR
     )
-    cap, source_type, fps, width, height, total_frames = InitInstance.initialize_video_source(args.debug)
+    # cap, source_type, fps, width, height, total_frames = InitInstance.initialize_video_source(args.debug)
     
-    MainInstance = TSVX(
-        optimize    = args.optimize if args.optimize    else False,
-        parallelism = args.parallel if args.parallel    else False,
-        offload     = args.offload  if args.offload     else False,
-        # debug       = args.debug    if args.debug else False, // TODO: add debug interface for every instances
-    )
-     
     LoadInstance = LoadModel(InitInstance)
 
-    depth_trt_inference = LoadInstance.mde_model()
-    bytetrack_predictor, bytetrack_tracker, bytetrack_timer = LoadInstance.bytetrack_model()
-    
-    video_writer = None
-
-    if args.save_video:
-        video_writer    = InitInstance.initialize_video_writer()
-    
-    # lane for MDE infer
-    stream_0 = cuda.Stream()
-    # lane for separate depth processing after MDE infer 
-    # Infer -> Depth Process -> BBProcess, haven't benchmarked the benefit of 
-    # this additional stream yet.
-    stream_1 = cuda.Stream()
-
-    MainInstance.print_controls(source_type, args.save_video)
-     
-    final_count, total_processed = MainInstance.depth_tracking_loop(
-        cap, depth_trt_inference, 
-        bytetrack_predictor, bytetrack_tracker, bytetrack_timer,
-        stream_0, stream_1, video_writer, source_type, total_frames,
-        display=not args.no_display
+    MainInstance = TSVX(
+        Init        = InitInstance,
+        LoadIns     = LoadInstance,
+        args        = args
     )
+     
+    MainInstance.print_controls()
+     
+    final_count, total_processed = MainInstance.depth_tracking_loop()
     
-    MainInstance.cleanup(cap, video_writer)
+    MainInstance.cleanup()
     print(f"\nFinal stats:")
     print(f"  Total frames processed: {total_processed}")
     print(f"  Tracked objects in last frame: {final_count}")
