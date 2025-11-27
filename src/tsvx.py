@@ -128,9 +128,9 @@ class LoadModel:
     '''
     TSVX MDE & MOT Loader, Consist of Vanilla TRT (MDE) and PyTorch TRT (MOT)
     '''
-    def __init__(self):
+    def __init__(self, Init):
 
-        Initialize.check_cuda_support()
+        Init.check_cuda_support()
 
     def mde_model(self):
         return TRT_MDE(ModelArgs.MDE_PATH)
@@ -431,6 +431,7 @@ if __name__ == "__main__":
         nv_prime    = AppArgs.NV_PRIME,
         glx_vendor  = AppArgs.GLX_VENDOR
     )
+    cap, source_type, fps, width, height, total_frames = InitInstance.initialize_video_source(args.debug)
     
     MainInstance = TSVX(
         optimize    = args.optimize if args.optimize    else False,
@@ -439,11 +440,11 @@ if __name__ == "__main__":
         # debug       = args.debug    if args.debug else False, // TODO: add debug interface for every instances
     )
      
-    depth_trt_inference = LoadModel.mde_model()
-    bytetrack_predictor, bytetrack_tracker, bytetrack_timer = LoadModel.bytetrack_model()
+    LoadInstance = LoadModel(InitInstance)
 
-    cap, source_type, fps, width, height, total_frames = InitInstance.initialize_video_source(args.debug)
-     
+    depth_trt_inference = LoadInstance.mde_model()
+    bytetrack_predictor, bytetrack_tracker, bytetrack_timer = LoadInstance.bytetrack_model()
+    
     video_writer = None
 
     if args.save_video:
