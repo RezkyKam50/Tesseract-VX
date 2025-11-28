@@ -11,3 +11,6 @@
 [submodule "tensorrt"]
 	path = tensorrt
 	url = https://github.com/NVIDIA/TensorRT.git
+[submodule "onnxruntime"]
+	path = onnxruntime
+	url = https://github.com/microsoft/onnxruntime.git

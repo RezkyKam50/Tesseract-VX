@@ -109,13 +109,12 @@ install_tensorrt "$OS"
  
 export NVIDIA_TENSORRT_DISABLE_INTERNAL_PIP=0
 
-uv pip install tensorrt
-uv pip install nvidia-tensorrt
 uv pip install tensorrt-cu13-bindings
-uv pip install polygraphy
+uv pip install polygraphy 
+uv pip install setuptools appdirs #nvidia-pyindex dependency
 
-uv pip install nvidia-pyindex
-uv pip install onnx onnxruntime-gpu
+uv pip install setuptools nvidia-pyindex --no-build-isolation
+uv pip install onnx onnxruntime
 uv pip install pycuda
 
 echo "TensorRT and ONNX installation completed!"

@@ -61,6 +61,9 @@ echo "Running python setup..."
 
 echo "Running TensorRT setup..."
 ./${scripts_dir}/setup_tensorrt.sh
+
+echo "Running TensorRT Dependencies setup..."
+./${scripts_dir}/setup_deps.sh
  
 
 echo ""

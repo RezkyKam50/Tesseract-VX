@@ -316,10 +316,10 @@ class TSVX:
     def __init__(self, Init, LoadIns, args):
         self.args = args
 
-        self.TrackerInstance = TrackerProcess(optimize=args.optimize, parallelism=args.parallel)
-        self.DepthInstance = DepthProcess(optimize=args.optimize, offload=args.offload)
+        self.TrackerInstance    = TrackerProcess(optimize=args.optimize, parallelism=args.parallel)
+        self.DepthInstance      = DepthProcess(optimize=args.optimize, offload=args.offload)
 
-        self.calculate_fps_jit = numba.jit(nopython=args.optimize)(self.calculate_fps)
+        self.calculate_fps_jit  = numba.jit(nopython=args.optimize)(self.calculate_fps)
 
         self.cap, self.source_type, self.fps, self.width, self.height, self.total_frames = Init.initialize_video_source(debugging=args.debug)
 
