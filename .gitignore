@@ -10,7 +10,7 @@ trt_models
 build_opencv/
 build/
 *.pth.tar
-Video_Codec_SDK_*
+Video_Codec_*
 cudnn-*
 Python-*/
 .venv/
