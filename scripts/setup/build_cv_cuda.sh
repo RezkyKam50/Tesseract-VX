@@ -34,6 +34,7 @@ CUDA_FLAGS="\
 
 cmake ../thirdparty/opencv \
   -D CMAKE_BUILD_TYPE=Release \
+  -D ENABLE_CCACHE=ON \
   -D WITH_CUDA=ON \
   -D CMAKE_C_FLAGS="$C_FLAGS" \
   -D CMAKE_CXX_FLAGS="$CXX_FLAGS" \
@@ -49,12 +50,12 @@ cmake ../thirdparty/opencv \
   -D PYTHON3_EXECUTABLE=$(which python3) \
   -D PYTHON3_INCLUDE_DIR=$(python3 -c "from sysconfig import get_paths; print(get_paths()['include'])") \
   -D PYTHON3_LIBRARY=$(python3 -c "import sysconfig; print(sysconfig.get_config_var('LIBPL') + '/libpython${PY_ABI}.so')") \
-  -D PYTHON3_PACKAGES_PATH=$(python3 -c "import site; print(site.getsitepackages()[0])") 
+  -D PYTHON3_PACKAGES_PATH=$(python3 -c "import site; print(site.getsitepackages()[0])") \
+  -D CMAKE_INSTALL_PREFIX=$VIRTUAL_ENV \
+  -D PYTHON3_PACKAGES_PATH=$VIRTUAL_ENV/lib/python3.13/site-packages
 
-
-echo "WARN: this will install opencv system-wide"
 make -j$(nproc --all)
-sudo make install
+make install
 
 export PYTHONPATH=$PYTHONPATH:$HOME/Tesseract-VX/build_opencv/lib/python3
 
