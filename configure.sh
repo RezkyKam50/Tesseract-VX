@@ -4,8 +4,12 @@ set -e
 
 scripts_dir="./scripts/setup/"
 
+echo "Detecting and installing OS-level dependencies..."
+
+./${scripts_dir}/setup_os.sh
+
 echo "Checking mandatory dependencies..."
- 
+
 deps=(
     "ninja:ninja"
     "meson:meson"
@@ -62,9 +66,28 @@ echo "Running python setup..."
 echo "Running TensorRT setup..."
 ./${scripts_dir}/setup_tensorrt.sh
 
-echo "Running TensorRT Dependencies setup..."
-./${scripts_dir}/setup_deps.sh
- 
+# specific for python 3.14
+# only run this if python version is 3.14
+# else, skip
+echo "Building onnxfrom source..."
+./${scripts_dir}/build_onnx.sh
+echo "Building onnxruntime from source..."
+./${scripts_dir}/build_onnxruntime.sh
+# # #
+
+echo "Installing other python dependencies..."
+./${scripts_dir}/setup_dependencies.sh
+
+
+# optional components for opencv
+echo "Building ffmpeg from source..."
+./${scripts_dir}/setup_ffmpeg.sh
+echo "Building nvcodec from source..."
+./${scripts_dir}/build_nvcuvid.sh
+# # #
+
+echo "Building OpenCV from source..."
+./${scripts_dir}/build_cv_cuda.sh
 
 echo ""
 echo "Setup completed successfully!"

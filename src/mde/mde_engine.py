@@ -7,7 +7,6 @@ import tensorrt as trt
 import pycuda.driver as cuda
 import pycuda.autoinit
 
-
 class TRT_MDE:
     def __init__(self, trt_path):
         self.logger = trt.Logger(trt.Logger.WARNING)

@@ -7,9 +7,16 @@
 # and Python bindings will be installed in the current Python environment.
 
 set -e
+# tensorrt and nvcc were required systemwide
+source .venv/bin/activate
 
 if [ -f "./scripts/cuda_toolkit.sh" ]; then
     source ./scripts/cuda_toolkit.sh
+fi
+ 
+ # for now, all the library doesn't require specific gcc version
+if [ -f "./scripts/gcc_swithcer.sh" ]; then
+    source ./scripts/gcc_switcher.sh
 fi
  
 detect_os() {
@@ -109,12 +116,13 @@ install_tensorrt "$OS"
  
 export NVIDIA_TENSORRT_DISABLE_INTERNAL_PIP=0
 
+uv pip install tensorrt
 uv pip install tensorrt-cu13-bindings
 uv pip install polygraphy 
 uv pip install setuptools appdirs #nvidia-pyindex dependency
+uv pip install onnx onnxruntime
 
 uv pip install setuptools nvidia-pyindex --no-build-isolation
-uv pip install onnx onnxruntime
 uv pip install pycuda
 
 echo "TensorRT and ONNX installation completed!"

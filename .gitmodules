@@ -8,9 +8,18 @@
 	path = contrib
 	url = https://github.com/opencv/opencv_contrib.git
 	branch = master
-[submodule "tensorrt"]
-	path = tensorrt
-	url = https://github.com/NVIDIA/TensorRT.git
-[submodule "onnxruntime"]
-	path = onnxruntime
-	url = https://github.com/microsoft/onnxruntime.git
+[submodule "thirdparty/opencv"]
+	path = thirdparty/opencv
+	url = https://github.com/opencv/opencv.git
+[submodule "thirdparty/opencv_contrib"]
+	path = thirdparty/opencv_contrib
+	url = https://github.com/opencv/opencv_contrib.git
+[submodule "thirdparty/torch2trt"]
+	path = thirdparty/torch2trt
+	url = https://github.com/NVIDIA-AI-IOT/torch2trt.git
+[submodule "thirdparty/nv-codec"]
+	path = thirdparty/nv-codec
+	url = https://git.videolan.org/git/ffmpeg/nv-codec-headers.git
+[submodule "thirdparty/ffmpeg"]
+	path = thirdparty/ffmpeg
+	url = https://git.ffmpeg.org/ffmpeg.git

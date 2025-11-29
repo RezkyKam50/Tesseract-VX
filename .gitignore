@@ -8,16 +8,17 @@ trt_models
 *.engine
 *.mp4
 build_opencv/
+build/
 *.pth.tar
 Video_Codec_SDK_*
 cudnn-*
-nv-codec-headers
 Python-*/
 .venv/
 *.tar.xz
 Python-*
 .venv
 python-*/
+ 
 
 
 

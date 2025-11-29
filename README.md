@@ -10,59 +10,11 @@ Relative distance were simply calculated by summing the average depth value insi
 Getting the absolute (Real) distance can be done by calibrating average depth with measures, though its quiet tricky due to difference in focal length.
 
 
-**Fedora 42 Setup**
+**Build from source**
 
-> notice: run every script (.py, .sh) from parents directory.
-
-Start by compiling OpenCV from source first, this ensures you have CUDA enabled CV libraries .**You need the latest CUDA Toolkit (13.0) for this**
-
-> sudo chmod +x ./scripts/setup/gcc_switcher.sh
-
-You need gcc-14 and g++-14 on your system wide environment
-
-> ./scripts/setup/gcc_switcher.sh
-
-Source the exact version 13.0 CUDA Toolkit
-
-> sudo chmod +x ./scripts/setup/cuda_toolkit.sh
-
-Build OpenCV from source with CUDA enabled
-
-> sudo chmod +x ./scripts/setup/build_cv_cuda.sh && ./scripts/setup/build_cv_cuda.sh
-
-Depending on your Distro, install "uv" package manager systemwide, this is crucial for dependencies resolving.
-
-> sudo chmod +x ./scripts/setup/setup_dav-2.sh && ./scripts/setup/setup_dav-2.sh
-
-> sudo chmod +x ./scripts/setup/setup_tensorrt.sh && ./scripts/setup/setup_tensorrt.sh
-
-Under 'checkpoints' directory, there should be the weight of the models pulled from HF **fresh ovenbaked**.
-The default script is hardcoded for 'vitl' for Large size.
-
-Convert HF to ONNX
-
-> python3 ./src/bytetrack/utils/onnx_conv.py
-
-Convert ONNX to TensorRT (.engine)
-
-> python3 ./src/bytetrack/utils/onnx_tensorrt.py
-
-Now, the MDE model is fresh ovenbaked, lets continue to baking the ByteTracker model.
-
-> sudo chmod +x ./src/bytetrack/pretrained/install_mot.sh
-
-Download from ByteTrack repository
-
-> ./src/bytetrack/pretrained/install_mot.sh
-
-convert from .pth to TRT .pth (this will produce .pth and .engine) but we'll use the .pth under './src/bytetrack/trt_models'
-
-> python3 ./src/bytetrack/utils/conv_trt.sh
-
-Check first that theres model in each of those folders and every step runs smoothly without error.
-Now run:
-
-> sudo chmod +x tsvx.sh && ./tsvx.sh
+> git clone --recurse git@github.com:RezkyKam50/Tesseract-VX.git
+> git submodule update --init --recursive
+> ./configure.sh
 
 # Citation
 
