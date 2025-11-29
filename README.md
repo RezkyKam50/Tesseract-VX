@@ -12,9 +12,10 @@ Getting the absolute (Real) distance can be done by calibrating average depth wi
 
 **Build from source**
 
-> git clone --recurse git@github.com:RezkyKam50/Tesseract-VX.git
-> git submodule update --init --recursive
-> ./configure.sh
+- git clone --recurse git@github.com:RezkyKam50/Tesseract-VX.git
+- cd Tesseract-VX
+- git submodule update --init --recursive
+- ./configure.sh
 
 # Citation
 
