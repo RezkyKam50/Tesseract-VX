@@ -9,13 +9,15 @@
 Relative distance were simply calculated by summing the average depth value inside the bounding box.
 Getting the absolute (Real) distance can be done by calibrating average depth with measures, though its quiet tricky due to difference in focal length.
 
-
 **Build from source**
 
-- git clone --recurse git@github.com:RezkyKam50/Tesseract-VX.git
-- cd Tesseract-VX
-- git submodule update --init --recursive
-- ./configure.sh
+git clone --recurse git@github.com:RezkyKam50/Tesseract-VX.git
+
+cd Tesseract-VX
+
+git submodule update --init --recursive
+
+./configure.sh
 
 # Citation
 
