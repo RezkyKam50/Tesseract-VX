@@ -120,7 +120,7 @@ uv pip install tensorrt
 uv pip install tensorrt-cu13-bindings
 uv pip install polygraphy 
 uv pip install setuptools appdirs #nvidia-pyindex dependency
-uv pip install onnx onnxruntime
+uv pip install onnx onnxruntime-gpu onnxscript
 
 uv pip install setuptools nvidia-pyindex --no-build-isolation
 uv pip install pycuda

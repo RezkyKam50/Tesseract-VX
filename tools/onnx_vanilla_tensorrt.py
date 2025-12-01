@@ -11,9 +11,6 @@ except ImportError:
     from utilities import Engine
 
 
-DEFAULT_ONNX_INPUT=" "  
-DEFAULT_TRT_OUTPUT=" "
-
 def export_trt(trt_path: str, onnx_path: str, use_fp16: bool):
     if not os.path.isfile(onnx_path):
         raise FileNotFoundError(f"Onnx file doesn't exist: {onnx_path}")
@@ -41,13 +38,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--trt-path",
         type=str,
-        default=f"./trt_models/{DEFAULT_TRT_OUTPUT}",
+        default=None,
         help="Path to save the TensorRT engine file.",
     )
     parser.add_argument(
         "--onnx-path",
         type=str,
-        default=f"./onnx_models/{DEFAULT_ONNX_INPUT}",
+        default=None,
         help="Path to the ONNX model file.",
     )
     parser.add_argument(

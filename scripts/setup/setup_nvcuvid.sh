@@ -14,22 +14,22 @@ detect_os() {
 
 setup_paths() {
     case $OS in
-        fedora|rhel|centos)
+        (fedora|rhel|centos)
             CUDA_PATH="/usr/local/cuda-13.0"
             INCLUDE_PATH="/usr/local/include"
             LIB_PATH="/usr/local/lib"
             ;;
-        arch|manjaro)
+        (arch|manjaro)
             CUDA_PATH="/opt/cuda"
             INCLUDE_PATH="/usr/include"
             LIB_PATH="/usr/lib"
             ;;
-        debian|ubuntu|linuxmint)
+        (debian|ubuntu|linuxmint)
             CUDA_PATH="/usr/local/cuda-13.0"
             INCLUDE_PATH="/usr/local/include"
             LIB_PATH="/usr/local/lib"
             ;;
-        *)
+        (*)
             CUDA_PATH="/usr/local/cuda-13.0"
             INCLUDE_PATH="/usr/local/include"
             LIB_PATH="/usr/local/lib"

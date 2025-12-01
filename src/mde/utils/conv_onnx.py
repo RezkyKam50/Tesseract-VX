@@ -3,14 +3,13 @@ import torch
 import torch.onnx
 import glob
 import sys, os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.mde.depth_anything_v2.dpt import DepthAnythingV2
 
 
 def main():
     parser = argparse.ArgumentParser(description='Depth Anything V2')
-    
+    os.makedirs("./onnx_models", exist_ok=True)
     # default to Large
 
     parser.add_argument('--input-size', type=int, default=518)
@@ -26,7 +25,7 @@ def main():
     }
     
     depth_anything = DepthAnythingV2(**model_configs[args.encoder])
-    path = glob.glob(f'./checkpoints/Depth-Anything-V2-*/depth_anything_v2_{args.encoder}.pth')[0]
+    path = glob.glob(f'./checkpoints/depth_anything_v2_{args.encoder}.pth')[0]
     depth_anything.load_state_dict(torch.load(f'{path}', map_location='cpu'))
     depth_anything = depth_anything.to('cpu').eval()
  
@@ -36,7 +35,7 @@ def main():
 
     onnx_path = f'./onnx_models/depth_anything_v2_{args.encoder}.onnx'
  
-    torch.onnx.export(depth_anything, dummy_input, onnx_path, opset_version=11, input_names=["input"], output_names=["output"], verbose=True)
+    torch.onnx.export(depth_anything, dummy_input, onnx_path, opset_version=18, input_names=["input"], output_names=["output"], verbose=True)
 
     print(f"Model exported to {onnx_path}")
 

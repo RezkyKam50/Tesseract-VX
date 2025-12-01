@@ -7,13 +7,9 @@ import sys
 import os
 import argparse
 
-# Add parent directory to sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-from yolox.exp import get_exp
-from yolox.models.network_blocks import SiLU
-from yolox.utils import replace_module
-
+from src.bytetrack.yolox.exp import get_exp
+from src.bytetrack.yolox.models.network_blocks import SiLU
+from src.bytetrack.yolox.utils import replace_module
 
 
 def make_parser():

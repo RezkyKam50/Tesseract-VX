@@ -2,8 +2,8 @@ __pycache__
 .vscode
 assets
 checkpoints
-onnx_models
-trt_models
+onnx_models/
+trt_models/
 *.pth
 *.engine
 *.mp4
@@ -18,6 +18,8 @@ Python-*/
 Python-*
 .venv
 python-*/
+checkpoints/*.pth
+checkpoints/*.pth.tar
  
 
 
