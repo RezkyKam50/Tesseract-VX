@@ -1,0 +1,1 @@
+aria2c -s 16 -x 16 https://huggingface.co/depth-anything/Depth-Anything-V2-Large/resolve/main/depth_anything_v2_vitl.pth?download=true -o ./checkpoints/depth_anything_v2_vitl.pth

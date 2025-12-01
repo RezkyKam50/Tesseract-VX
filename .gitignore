@@ -1,7 +1,6 @@
 __pycache__
 .vscode
 assets
-checkpoints
 onnx_models/
 trt_models/
 *.pth
