@@ -7,14 +7,14 @@ class AppArgs:
 
 class ModelArgs:
     # ByteTrack Model
-    EXP_FILE = "./src/bytetrack/exp/yolox_tiny_mix_det.py"
-    MOT_PATH = "./trt_models/bytetrack.pth"
+    EXP_FILE = "./bytetrack/exp/yolox_s_mix_det.py"
+    MOT_PATH = "./trt_models/bytetrack/bytetrack_s.pth"
     # MDE Model
-    MDE_PATH = './trt_models/depth_anything_vitl-fp16.engine'
+    MDE_PATH = './trt_models/depth_anything_v2_vitl.engine'
 
 class TrackArgs:
 
-    # Perf.
+    # Functional
     TRACK_THRESH = 0.5
     TRACK_BUFFER = 10
     PROXIMITY_THRESH = 200

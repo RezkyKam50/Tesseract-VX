@@ -1,6 +1,8 @@
+#!/bin/bash
 export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+export PYTHONPATH="${PYTHONPATH}:$(pwd)/bytetrack"
+
 source .venv/bin/activate
 source ./scripts/setup/srclib.sh
  
-__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia \ 
-     python src/tsvx.py --source ./src/bytetrack/videos/car.mp4 --save-video --output ./footage/output.mp4
+taskset -c 0-8 python src/tsvx.py --source "0" --parallel --offload

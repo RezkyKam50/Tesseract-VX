@@ -1,5 +1,7 @@
-python ./src/bytetrack/utils/conv_trt.py \
-    --model-name bytetrack_tiny_mot17 \
-    --ckpt-path ./src/bytetrack/pretrained/bytetrack_tiny_mot17.pth.tar \
-    --exp-name yolox_tiny_mix_det \
+python -m bytetrack.utils.conv_trt \
+    --model-name bytetrack_s \
+    --ckpt-path ./checkpoints/bytetrack_s_mot17.pth.tar \
+    --exp-file ./bytetrack/exp/yolox_s_mix_det.py \
+    --exp-name bytetrack \
+    --fp16
     

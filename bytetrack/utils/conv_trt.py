@@ -1,10 +1,14 @@
 from loguru import logger
 import tensorrt as trt
 import torch
+
+import os, sys
+import argparse
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from torch2trt import torch2trt
 from yolox.exp import get_exp
-import os
-import argparse
 
 # this script produces .engine and .pth (torch2trt)
 
@@ -59,28 +63,28 @@ def parse_args():
     parser.add_argument(
         "--model-name", 
         type=str, 
-        default="bytetrack_tiny_mot17",
+        default=None,
         help="Name of the model (used for output files)"
     )
     
     parser.add_argument(
         "--exp-file", 
         type=str, 
-        default="./src/bytetrack/exp/yolox_tiny_mix_det.py",
+        default=None,
         help="Path to experiment configuration file"
     )
     
     parser.add_argument(
         "--exp-name", 
         type=str, 
-        default="yolox_tiny_mix_det",
+        default=None,
         help="Experiment name"
     )
     
     parser.add_argument(
         "--ckpt-path", 
         type=str, 
-        default="./src/bytetrack/pretrained/bytetrack_tiny_mot17.pth.tar",
+        default=None,
         help="Path to checkpoint file"
     )
     

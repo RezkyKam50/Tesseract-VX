@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from yolox.utils import bboxes_iou
+from ..utils import bboxes_iou
 
 import math
 

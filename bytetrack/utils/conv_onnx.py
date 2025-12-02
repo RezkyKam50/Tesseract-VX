@@ -1,16 +1,13 @@
 from loguru import logger
-
 import torch
 from torch import nn
-
 import sys
 import os
 import argparse
-
-from src.bytetrack.yolox.exp import get_exp
-from src.bytetrack.yolox.models.network_blocks import SiLU
-from src.bytetrack.yolox.utils import replace_module
-
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from yolox.exp import get_exp
+from yolox.models.network_blocks import SiLU
+from yolox.utils import replace_module
 
 def make_parser():
     parser = argparse.ArgumentParser("YOLOX onnx deploy")
@@ -43,9 +40,7 @@ def make_parser():
         default=None,
         nargs=argparse.REMAINDER,
     )
-
     return parser
-
 
 @logger.catch
 def main():
@@ -56,26 +51,29 @@ def main():
 
     if not args.experiment_name:
         args.experiment_name = exp.exp_name
-
+    
     model = exp.get_model()
+    
     if args.ckpt is None:
         file_name = os.path.join(exp.output_dir, args.experiment_name)
         ckpt_file = os.path.join(file_name, "best_ckpt.pth.tar")
     else:
         ckpt_file = args.ckpt
-
+    
     # load the model state dict
     ckpt = torch.load(ckpt_file, map_location="cpu")
-
     model.eval()
+    
     if "model" in ckpt:
         ckpt = ckpt["model"]
+    
     model.load_state_dict(ckpt)
     model = replace_module(model, nn.SiLU, SiLU)
     model.head.decode_in_inference = False
-
     logger.info("loading checkpoint done.")
+    
     dummy_input = torch.randn(1, 3, exp.test_size[0], exp.test_size[1])
+    
     torch.onnx.export(
         model,
         dummy_input,
@@ -83,21 +81,18 @@ def main():
         input_names=[args.input],
         output_names=[args.output],
         opset_version=args.opset,
-        dynamo=True # deprecation on false
     )
     logger.info("generated onnx model named {}".format(args.output_name))
-
+    
     if not args.no_onnxsim:
         import onnx
         from onnxsim import simplify
-
         # use onnxsimplify to reduce reduent model.
         onnx_model = onnx.load(args.output_name)
         model_simp, check = simplify(onnx_model)
         assert check, "Simplified ONNX model could not be validated"
         onnx.save(model_simp, args.output_name)
         logger.info("generated simplified onnx model named {}".format(args.output_name))
-
 
 if __name__ == "__main__":
     main()

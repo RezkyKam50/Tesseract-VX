@@ -23,6 +23,60 @@ import pycuda.autoinit
 from tsvx_args import (
     AppArgs, ModelArgs, TrackArgs, FootageArgs, FontConfig, parse_args)
 
+ 
+
+def _depth_alpha_beta(min_val, max_val):
+    alpha = 255.0 / (max_val - min_val) if max_val > min_val else 1.0
+    beta = -min_val * alpha
+    return alpha, beta
+
+def _count_dim(tlwh):
+    return np.array([int(tlwh[0]), int(tlwh[1]), int(tlwh[2]), int(tlwh[3])], dtype=np.int32)
+
+def _get_depth_at_box(depth_map, x, y, w, h):
+ 
+    is_gpu = hasattr(depth_map, 'download')
+    if is_gpu:
+ 
+        if depth_map.empty():
+            return np.nan
+        rows, cols = depth_map.size()
+    else:
+ 
+        if depth_map.size == 0 or w <= 0 or h <= 0:
+            return np.nan
+        rows, cols = depth_map.shape[0], depth_map.shape[1]
+     
+    x = max(0, min(x, cols - 1))
+    y = max(0, min(y, rows - 1))
+    w = min(w, cols - x)
+    h = min(h, rows - y)
+    
+    if w <= 0 or h <= 0:
+        return np.nan
+    
+    if is_gpu:
+        stream = cv2.cuda_Stream()
+         
+        depth_cpu = depth_map.download(stream)
+        stream.waitForCompletion()
+         
+        region = depth_cpu[y:y+h, x:x+w]
+    else:
+        region = depth_map[y:y+h, x:x+w]
+    
+    total = np.sum(region)
+    count = region.size
+    
+    return total / count if count > 0 else np.nan
+
+def _count_vertical(w, h, threshold):
+    return w / h > threshold
+
+def _calculate_fps(current_time, start_time):
+    return 1.0 / ((current_time - start_time) + 1e-6)
+
+
 class Initialize:
     '''
     Init for Flight-check
@@ -44,6 +98,13 @@ class Initialize:
         os.environ["CUDA_VISIBLE_DEVICES"]      = f"{cuda_device}"
         os.environ["NV_PRIME_RENDER_OFFLOAD"]   = "1" if nv_prime else "0"
         os.environ["__GLX_VENDOR_LIBRARY_NAME"] = f"{glx_vendor}"
+         
+        self.cap = None
+        self.source_type = None
+        self.fps = None
+        self.width = None
+        self.height = None
+        self.total_frames = None
 
     def check_cuda_support(self):
         cuda_available = cv2.cuda.getCudaEnabledDeviceCount() > 0
@@ -77,6 +138,13 @@ class Initialize:
         width           = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height          = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         total_frames    = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+         
+        self.cap = cap
+        self.source_type = source_type
+        self.fps = fps
+        self.width = width
+        self.height = height
+        self.total_frames = total_frames
         
         if debugging is True and isinstance(self.source, str) and (os.path.sep in self.source or '/' in self.source):
             logger.info(f"Video properties: {width}x{height} @ {fps:.2f} fps")
@@ -86,25 +154,25 @@ class Initialize:
         return cap, source_type, fps, width, height, total_frames
 
     def initialize_video_writer(self):
-
-        output                       = self.generate_output_path()
-        _, _, fps, width, height, _  = self.initialize_video_source(self.source)
-
+        if self.cap is None:
+            raise RuntimeError("Video source must be initialized before creating writer")
+        
+        output = self.generate_output_path()
         output_dir = osp.dirname(output)
 
         if output_dir:
             os.makedirs(output_dir, exist_ok=True)
         
-        combined_width = width * 2
+        combined_width = self.width * 2
         
         fourcc = cv2.VideoWriter_fourcc(*FootageArgs.VIDEO_CODEC)
-        writer = cv2.VideoWriter(output, fourcc, fps, (combined_width, height))
+        writer = cv2.VideoWriter(output, fourcc, self.fps, (combined_width, self.height))
         
         if not writer.isOpened():
             raise RuntimeError(f"Failed to create video writer: {output}")
         
         logger.info(f"Saving output to: {output}")
-        logger.info(f"Output resolution: {combined_width}x{height} @ {fps:.2f} fps")
+        logger.info(f"Output resolution: {combined_width}x{self.height} @ {self.fps:.2f} fps")
         
         return writer
 
@@ -152,10 +220,21 @@ class LoadModel:
 
         decoder     = model.head.decode_outputs
         predictor   = TORCH_MOT(model, exp, device, ModelArgs.MOT_PATH, decoder, fp16=False)
-        tracker     = BYTETracker(frame_rate=TrackArgs.FRAME_RATE)
+        
+        tracker_args = argparse.Namespace(
+            track_thresh=TrackArgs.TRACK_THRESH,
+            track_buffer=TrackArgs.TRACK_BUFFER,
+            match_thresh=TrackArgs.MATCH_THRESH,
+            aspect_ratio_thresh=TrackArgs.ASPECT_RATIO_THRESH,
+            min_box_area=TrackArgs.MIN_BOX_AREA,
+            mot20=False
+        )
+        
+        tracker     = BYTETracker(tracker_args, frame_rate=TrackArgs.FRAME_RATE)
         timer       = Timer()
         
         return predictor, tracker, timer
+
 
 class DepthProcess:
     '''
@@ -164,32 +243,28 @@ class DepthProcess:
     def __init__(self, optimize, offload):
         
         self.offload = offload
-        self.depth_alpha_beta_jit = numba.jit(nopython=optimize)(self.depth_alpha_beta)
+         
+        if optimize:
+            self._depth_alpha_beta_compiled = numba.jit(nopython=True)(_depth_alpha_beta)
+        else:
+            self._depth_alpha_beta_compiled = _depth_alpha_beta
 
     def process_depth_map(self, depth, frame_shape, stream):
 
         gpu_depth               = cv2.cuda_GpuMat()
         # -- offload -> gpu     : depth obj., lane
-        gpu_depth.upload(depth, stream)
+        gpu_depth.upload(depth)
         #
         depth_map, gpu_depth_resized = self.resize_depth(
             gpu_depth, frame_shape, stream)
         #
-        stream.synchronize()
         min_val, max_val, _, _  = cv2.cuda.minMaxLoc(gpu_depth_resized)
-        alpha, beta             = self.depth_alpha_beta_jit(min_val, max_val)
+        alpha, beta             = self._depth_alpha_beta_compiled(min_val, max_val)
 
         depth_colored = self.normalize_depth(
             gpu_depth_resized, alpha, beta, stream)
 
         return depth_map, depth_colored
-
-    def depth_alpha_beta(self, min_val, max_val):
-
-        alpha   = 255.0 / (max_val - min_val) if max_val > min_val else 1.0
-        beta    = -min_val * alpha
-
-        return alpha, beta
 
     def resize_depth(self, gpu_depth, frame_shape, stream):
         target_size             = (frame_shape[1], frame_shape[0])
@@ -204,18 +279,33 @@ class DepthProcess:
         return depth_map, gpu_depth_resized
 
     def normalize_depth(self, gpu_depth_resized, alpha, beta, stream):
-        gpu_depth_normalized    = gpu_depth_resized.convertTo(cv2.CV_8UC3, alpha, beta, stream=stream)
-
+        gpu_depth_normalized = gpu_depth_resized.convertTo(cv2.CV_8UC3, alpha, beta, stream=stream)
+        
         if self.offload is True:
-            # -- offload -> cpu : normalized
-            depth_colored           = cv2.applyColorMap(
-                gpu_depth_normalized.download(stream), cv2.COLORMAP_BONE)
+            depth_normalized_cpu = gpu_depth_normalized.download(stream)
+            depth_colored = cv2.applyColorMap(depth_normalized_cpu, cv2.COLORMAP_BONE)
         else:
-            depth_colored           = cv2.applyColorMap(
-                gpu_depth_normalized, cv2.COLORMAP_BONE)
-
+ 
+            stream.waitForCompletion()
+             
+            depth_normalized_cpu = gpu_depth_normalized.download()
+             
+            depth_gpu = cp.asarray(depth_normalized_cpu)
+ 
+            depth_colored_gpu = cp.zeros((depth_gpu.shape[0], depth_gpu.shape[1], 3), dtype=cp.uint8)
+             
+            x = depth_gpu.astype(cp.float32) / 255.0
+            r = cp.minimum(255, cp.maximum(0, (1.0 - x) * 255))
+            g = cp.minimum(255, cp.maximum(0, (1.0 - x * 0.5) * 255))
+            b = cp.minimum(255, cp.maximum(0, x * 255))
+            
+            depth_colored_gpu[:, :, 0] = b.astype(cp.uint8)
+            depth_colored_gpu[:, :, 1] = g.astype(cp.uint8)
+            depth_colored_gpu[:, :, 2] = r.astype(cp.uint8)
+            
+            depth_colored = cp.asnumpy(depth_colored_gpu)
+        
         return depth_colored
-
 
 
 class TrackerProcess:
@@ -224,33 +314,25 @@ class TrackerProcess:
     '''
     def __init__(self, optimize, parallelism):
 
-        self.box_depth_jit      = numba.jit(nopython=optimize, parallel=parallelism)(self.get_depth_at_box)
-        self.count_dim_jit      = numba.jit(nopython=optimize)                      (self.count_dim)
-        self.count_vertical_jit = numba.jit(nopython=optimize)                      (self.count_vertical)
+        if optimize:
+            self._count_dim_compiled = numba.jit(nopython=True)(_count_dim)
+            self._get_depth_compiled = numba.jit(nopython=True, parallel=parallelism)(_get_depth_at_box)
+            self._count_vertical_compiled = numba.jit(nopython=True)(_count_vertical)
+        else:
+            self._count_dim_compiled = _count_dim
+            self._get_depth_compiled = _get_depth_at_box
+            self._count_vertical_compiled = _count_vertical
         
     def count_dim(self, tlwh):
-        return [int(v) for v in tlwh]
+        dims = self._count_dim_compiled(tlwh)
+        return [int(dims[0]), int(dims[1]), int(dims[2]), int(dims[3])]
 
     def get_depth_at_box(self, depth_map, tlwh):
+        x, y, w, h = self.count_dim(tlwh)
+        return self._get_depth_compiled(depth_map, x, y, w, h)
 
-        x, y, w, h = self.count_dim_jit(tlwh)
-
-        if depth_map.size == 0 or w <= 0 or h <= 0:
-            return np.nan
-        
-        x = max(0, min(x, depth_map.shape[1] - 1))
-        y = max(0, min(y, depth_map.shape[0] - 1))
-        w = min(w, depth_map.shape[1] - x)
-        h = min(h, depth_map.shape[0] - y)
-        
-        if w <= 0 or h <= 0:
-            return np.nan
-        
-        region = depth_map[y:y+h, x:x+w]    # vectorized ops. can be parallelized
-        total = np.sum(region)
-        count = region.size
-        
-        return total / count if count > 0 else np.nan
+    def count_vertical(self, tlwh):
+        return self._count_vertical_compiled(tlwh[2], tlwh[3], TrackArgs.ASPECT_RATIO_THRESH)
 
     def draw_transparent_highlight(self, img, x, y, w, h, color, alpha=TrackArgs.HIGHLIGHT_ALPHA, border_thickness=TrackArgs.BORDER_THICKNESS):
         overlay = img.copy()
@@ -258,16 +340,13 @@ class TrackerProcess:
         cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0, img)
         cv2.rectangle(img, (x, y), (x + w, y + h), color, border_thickness)
 
-    def count_vertical(tlwh):
-        return tlwh[2] / tlwh[3] > TrackArgs.ASPECT_RATIO_THRESH 
-
     def draw_tracked_objects(self, frame, depth_colored, depth_map, online_targets):
         tracked_count = 0
         for t in online_targets:
             tlwh = t.tlwh
             tid = t.track_id
 
-            vertical = self.count_vertical_jit(tlwh)
+            vertical = self.count_vertical(tlwh)
 
             if tlwh[2] * tlwh[3] > TrackArgs.MIN_BOX_AREA and not vertical:
                 tracked_count += 1
@@ -276,7 +355,7 @@ class TrackerProcess:
                 self.draw_transparent_highlight(frame, x, y, w, h, color)
                 self.draw_transparent_highlight(depth_colored, x, y, w, h, color)
 
-                avg_depth = self.box_depth_jit(depth_map, tlwh)
+                avg_depth = self.get_depth_at_box(depth_map, tlwh)
 
                 self.render_text_overlay(avg_depth, tid, x, y, frame, depth_colored, color)
                 
@@ -318,8 +397,11 @@ class TSVX:
 
         self.TrackerInstance    = TrackerProcess(optimize=args.optimize, parallelism=args.parallel)
         self.DepthInstance      = DepthProcess(optimize=args.optimize, offload=args.offload)
-
-        self.calculate_fps_jit  = numba.jit(nopython=args.optimize)(self.calculate_fps)
+ 
+        if args.optimize:
+            self._calculate_fps_compiled = numba.jit(nopython=args.optimize)(_calculate_fps)
+        else:
+            self._calculate_fps_compiled = _calculate_fps
 
         self.cap, self.source_type, self.fps, self.width, self.height, self.total_frames = Init.initialize_video_source(debugging=args.debug)
 
@@ -330,19 +412,17 @@ class TSVX:
 
         if args.save_video:
             self.video_writer = Init.initialize_video_writer()
-
-        # lane for MDE infer
-        self.stream_0 = cuda.Stream()
+            
         # lane for separate depth processing after MDE infer 
         # Infer -> Depth Process -> BBProcess, haven't benchmarked the benefit of 
         # this additional stream yet.
-        self.stream_1 = cuda.Stream()
+        self.stream_1 = cv2.cuda.Stream()
 
     def create_combined_view(self, frame, depth_colored):
         return cv2.hconcat([frame, depth_colored])
 
     def calculate_fps(self, current_time, start_time):
-        return 1.0 / ((current_time - start_time) + 1e-6)   
+        return self._calculate_fps_compiled(current_time, start_time)
 
     def print_controls(self):
         print("\nRunning ByteTrack with Depth Estimation...")
@@ -368,9 +448,8 @@ class TSVX:
                     break
                 
                 self.start_time = time.time()
-                depth = self.depth_trt_inference.infer(frame, self.stream_0)  
+                depth = self.depth_trt_inference.infer(frame)  
                 depth_map, depth_colored = self.DepthInstance.process_depth_map(depth, frame.shape, self.stream_1)
-                self.stream_1.synchronize() 
 
                 outputs, img_info = self.bytetrack_predictor.inference(frame, self.bytetrack_timer)
                 
@@ -390,7 +469,7 @@ class TSVX:
                 else:
                     self.bytetrack_timer.toc()
 
-                self.fps = self.calculate_fps_jit(time.time(), self.start_time)
+                self.fps = self.calculate_fps(time.time(), self.start_time)
 
                 self.draw_overlay_info(frame, self.fps, self.tracked_count, self.frame_id, self.total_frames)
                 combined = self.create_combined_view(frame, depth_colored)
@@ -436,7 +515,6 @@ class TSVX:
         cv2.destroyAllWindows()
 
 
-
 if __name__ == "__main__":
 
     args = parse_args()
@@ -449,7 +527,6 @@ if __name__ == "__main__":
         nv_prime    = AppArgs.NV_PRIME,
         glx_vendor  = AppArgs.GLX_VENDOR
     )
-    # cap, source_type, fps, width, height, total_frames = InitInstance.initialize_video_source(args.debug)
     
     LoadInstance = LoadModel(InitInstance)
 
@@ -467,6 +544,3 @@ if __name__ == "__main__":
     print(f"\nFinal stats:")
     print(f"  Total frames processed: {total_processed}")
     print(f"  Tracked objects in last frame: {final_count}")
- 
-        
- 
