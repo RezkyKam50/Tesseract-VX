@@ -193,6 +193,9 @@ class DepthProcess:
     def __init__(self, optimize, offload):
         
         self.offload = offload
+
+        # arrange mem.
+        self.gpu_depth  = cv2.cuda_GpuMat()
          
         if optimize:
             self._depth_alpha_beta_compiled = numba.jit(nopython=True, cache=True)(_depth_alpha_beta)
@@ -201,12 +204,11 @@ class DepthProcess:
 
     def process_depth_map(self, depth, frame_shape, stream):
 
-        gpu_depth               = cv2.cuda_GpuMat()
         # -- offload -> gpu     : depth obj., lane
-        gpu_depth.upload(depth)
+        self.gpu_depth.upload(depth)
         #
         depth_map, gpu_depth_resized = self.resize_depth(
-            gpu_depth, frame_shape, stream)
+            self.gpu_depth, frame_shape, stream)
         #
         min_val, max_val, _, _  = cv2.cuda.minMaxLoc(gpu_depth_resized)
         alpha, beta             = self._depth_alpha_beta_compiled(min_val, max_val)

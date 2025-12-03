@@ -15,10 +15,18 @@ class TRT_MDE:
         self.inputs = []
         self.outputs = []
         self.bindings = []
+        self.event = cuda.Event()
         self.stream = cuda.Stream()
         self.cv_stream = cv2.cuda.Stream()
+        # arrange gpu mem.
+        self.gpu_mat        = cv2.cuda_GpuMat()
 
-        self.event = cuda.Event()
+        # avoid repeating new ctx allocation by init. memory block
+        self._gpu_resized   = cv2.cuda_GpuMat()
+        self._gpu_rgb       = cv2.cuda_GpuMat()
+        self._gpu_depth     = cv2.cuda_GpuMat()
+
+
         self.mean = cp.array([0.485, 0.456, 0.406], dtype=cp.float32)
         self.std = cp.array([0.229, 0.224, 0.225], dtype=cp.float32)
          
@@ -55,17 +63,31 @@ class TRT_MDE:
         
         
     def _resize(self, image):
-        gpu_mat = cv2.cuda_GpuMat()
-        gpu_mat.upload(image, stream=self.cv_stream)
-        resized = cv2.cuda.resize(gpu_mat, (self.input_w, self.input_h), stream=self.cv_stream)
-        rgb = cv2.cuda.cvtColor(resized, cv2.COLOR_BGR2RGB, stream=self.cv_stream)
-        self.cv_stream.waitForCompletion()
+
+        self.gpu_mat.upload(image, stream=self.cv_stream)
+
+        resized = cv2.cuda.resize(
+            self.gpu_mat, 
+            (self.input_w, self.input_h), 
+            dst=self._gpu_resized, 
+            stream=self.cv_stream
+        )
+
+        rgb = cv2.cuda.cvtColor(
+            resized, 
+            cv2.COLOR_BGR2RGB, 
+            dst=self._gpu_rgb, 
+            stream=self.cv_stream
+        )
+
         return rgb
     
     def _preprocess(self, gpu_mat):
-        img_np = gpu_mat.download(stream=self.cv_stream)
+        
         self.cv_stream.waitForCompletion()
-         
+        img_np = gpu_mat.download(stream=self.cv_stream) # CV2 > cpu > CUPY
+        
+        # Numpy > CUPY
         img_cp = cp.asarray(img_np)
         img_cp = img_cp.astype(cp.float16) / 255.0
         img_cp = (img_cp - self.mean) / self.std
@@ -74,65 +96,65 @@ class TRT_MDE:
         
         return img_cp
     
+    def trt_dthPipe(self, img_flat):
+        # pass CuPy context to TRT context
+        cuda.memcpy_dtod_async(
+            self.inputs[0]['device'],
+            img_flat.data.ptr,
+            img_flat.nbytes,
+            self.stream
+        )
+            
+        for inp in self.inputs:
+            self.context.set_tensor_address(inp['name'], int(inp['device']))
+        for out in self.outputs:
+            self.context.set_tensor_address(out['name'], int(out['device']))
+            
+        self.context.execute_async_v3(stream_handle=self.stream.handle)
+            
+        # GPU -> CPU
+        cuda.memcpy_dtoh_async(
+            self.outputs[0]['host'], 
+            self.outputs[0]['device'], 
+            self.stream
+        )
+            
+        self.stream.synchronize()
+            
+        output_shape = self.context.get_tensor_shape(self.outputs[0]['name'])
+        depth = self.outputs[0]['host'].reshape(output_shape)
+
+        if depth.ndim == 4:
+            depth = depth[0, 0]
+        elif depth.ndim == 3:
+            depth = depth[0]
+              
+        return depth
+    
     def infer(self, input_image):
         nvtx.push_range("MDE Inference", color="red")
         
         try:
- 
-            rgb_gpu = self._resize(input_image)
+
+            rgb_gpu = self._resize(input_image) # returns CV2 GPU array
              
-            self.cv_stream.waitForCompletion()
-             
-            img_cp = self._preprocess(rgb_gpu)
+            img_cp = self._preprocess(rgb_gpu) # returns CuPy GPU array
             img_flat = img_cp.ravel()
-             
-            img_gpuarray = gpuarray.to_gpu_async(
-                img_flat.get(), 
-                stream=self.stream
-            )
             
-            cuda.memcpy_dtod_async(
-                self.inputs[0]['device'],
-                img_gpuarray.ptr,
-                img_flat.nbytes,
-                self.stream
-            )
-             
-            for inp in self.inputs:
-                self.context.set_tensor_address(inp['name'], int(inp['device']))
-            for out in self.outputs:
-                self.context.set_tensor_address(out['name'], int(out['device']))
-             
-            self.context.execute_async_v3(stream_handle=self.stream.handle)
-             
-            cuda.memcpy_dtoh_async(
-                self.outputs[0]['host'], 
-                self.outputs[0]['device'], 
-                self.stream
-            )
-             
-            self.stream.synchronize()
-             
-            output_shape = self.context.get_tensor_shape(self.outputs[0]['name'])
-            depth = self.outputs[0]['host'].reshape(output_shape)
-             
-            if depth.ndim == 4:
-                depth = depth[0, 0]
-            elif depth.ndim == 3:
-                depth = depth[0]
-             
-            depth_gpu = cv2.cuda_GpuMat()
-            depth_gpu.upload(depth, stream=self.cv_stream)
+            depth = self.trt_dthPipe(img_flat)
+
+            self._gpu_depth.upload(depth, stream=self.cv_stream)
              
             original_h, original_w = input_image.shape[:2]
+
             resized_depth_gpu = cv2.cuda.resize(
-                depth_gpu, 
+                self._gpu_depth, 
                 (original_w, original_h),
                 stream=self.cv_stream
             )
-             
-            depth_result = resized_depth_gpu.download(stream=self.cv_stream)
+
             self.cv_stream.waitForCompletion()
+            depth_result = resized_depth_gpu.download(stream=self.cv_stream)
             
         finally:
             nvtx.pop_range()
