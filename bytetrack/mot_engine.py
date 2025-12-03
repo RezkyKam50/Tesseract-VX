@@ -1,10 +1,14 @@
 # Predictor class for ByteTrack MOT
+import numpy as np
+import cupy as cp
 
+import pycuda.driver as cuda
+import pycuda.autoinit
+
+import tensorrt as trt
 import torch
- 
 from yolox.data.data_augment import preproc
-from yolox.utils import  postprocess
- 
+from yolox.utils import postprocess
 
 class TORCH_MOT:
     def __init__(self, model, exp, device, trt_file=None, decoder=None, fp16=True):
@@ -47,8 +51,5 @@ class TORCH_MOT:
             if self.decoder is not None:
                 outputs = self.decoder(outputs, dtype=outputs.type())
             outputs = postprocess(outputs, self.num_classes, self.confthre, self.nmsthre)
-        
-        return outputs, img_info
-    
- 
 
+        return outputs, img_info

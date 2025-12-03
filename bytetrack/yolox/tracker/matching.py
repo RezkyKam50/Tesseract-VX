@@ -7,7 +7,9 @@ from scipy.spatial.distance import cdist
 from cython_bbox import bbox_overlaps as bbox_ious
 from yolox.tracker import kalman_filter
 import time
+import numba
 
+@numba.njit(parallel=True, cache=True)
 def merge_matches(m1, m2, shape):
     O,P,Q = shape
     m1 = np.asarray(m1)
@@ -49,7 +51,7 @@ def linear_assignment(cost_matrix, thresh):
     matches = np.asarray(matches)
     return matches, unmatched_a, unmatched_b
 
-
+ 
 def ious(atlbrs, btlbrs):
     """
     Compute cost based on IoU
@@ -110,6 +112,8 @@ def v_iou_distance(atracks, btracks):
 
     return cost_matrix
 
+
+@numba.njit(parallel=True, cache=True)
 def embedding_distance(tracks, detections, metric='cosine'):
     """
     :param tracks: list[STrack]
@@ -129,6 +133,7 @@ def embedding_distance(tracks, detections, metric='cosine'):
     return cost_matrix
 
 
+@numba.njit(parallel=True, cache=True)
 def gate_cost_matrix(kf, cost_matrix, tracks, detections, only_position=False):
     if cost_matrix.size == 0:
         return cost_matrix
@@ -141,7 +146,7 @@ def gate_cost_matrix(kf, cost_matrix, tracks, detections, only_position=False):
         cost_matrix[row, gating_distance > gating_threshold] = np.inf
     return cost_matrix
 
-
+ 
 def fuse_motion(kf, cost_matrix, tracks, detections, only_position=False, lambda_=0.98):
     if cost_matrix.size == 0:
         return cost_matrix
@@ -156,6 +161,7 @@ def fuse_motion(kf, cost_matrix, tracks, detections, only_position=False, lambda
     return cost_matrix
 
 
+@numba.njit(parallel=True, cache=True)
 def fuse_iou(cost_matrix, tracks, detections):
     if cost_matrix.size == 0:
         return cost_matrix
@@ -169,7 +175,7 @@ def fuse_iou(cost_matrix, tracks, detections):
     fuse_cost = 1 - fuse_sim
     return fuse_cost
 
-
+ 
 def fuse_score(cost_matrix, detections):
     if cost_matrix.size == 0:
         return cost_matrix

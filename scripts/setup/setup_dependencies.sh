@@ -3,7 +3,7 @@ source ./scripts/setup/gcc_switcher.sh
 
 uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 uv pip install -v --no-build-isolation -U git+https://github.com/facebookresearch/xformers.git@main#egg=xformers
-uv pip install numba cupy numpy cython_bbox cython tqdm thop tabulate pycocotools lap scipy
+uv pip install numba cupy numpy cython_bbox cython tqdm thop tabulate pycocotools lap scipy nvtx
 
 cd ./thirdparty/torch2trt 
 uv pip install . --no-build-isolation

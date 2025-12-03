@@ -10,7 +10,7 @@ class ModelArgs:
     EXP_FILE = "./bytetrack/exp/yolox_s_mix_det.py"
     MOT_PATH = "./trt_models/bytetrack/bytetrack_s.pth"
     # MDE Model
-    MDE_PATH = './trt_models/depth_anything_v2_vitl.engine'
+    MDE_PATH = './trt_models/DAV2/depth_anything_v2_vitl.engine'
 
 class TrackArgs:
 
@@ -45,13 +45,13 @@ class FontConfig:
     TRACKER_INFO_COLOR      = (255, 255, 255)
     THEMECOLORS             = [
         (255, 255, 255),    # White
-        # (255, 0, 0),    # Blue
-        # (0, 0, 255),    # Red
-        # (255, 255, 0),  # Cyan
-        # (255, 0, 255),  # Magenta
-        # (0, 255, 255),  # Yellow
-        # (128, 255, 0),  # Light Green
-        # (255, 128, 0),  # Orange
+        # (255, 0, 0),      # Blue
+        # (0, 0, 255),      # Red
+        # (255, 255, 0),    # Cyan
+        # (255, 0, 255),    # Magenta
+        # (0, 255, 255),    # Yellow
+        # (128, 255, 0),    # Light Green
+        # (255, 128, 0),    # Orange
     ]
 
 def parse_args():

@@ -8,6 +8,8 @@ import torch
 import torchvision
 import torch.nn.functional as F
 
+import numba
+
 __all__ = [
     "filter_box",
     "postprocess",
@@ -97,7 +99,7 @@ def bboxes_iou(bboxes_a, bboxes_b, xyxy=True):
     area_i = torch.prod(br - tl, 2) * en  # * ((tl < br).all())
     return area_i / (area_a[:, None] + area_b - area_i)
 
-
+@numba.jit(nopython=True, parallel=True, cache=True)
 def matrix_iou(a, b):
     """
     return iou of a and b, numpy version for data augenmentation
@@ -111,6 +113,7 @@ def matrix_iou(a, b):
     return area_i / (area_a[:, np.newaxis] + area_b - area_i + 1e-12)
 
 
+@numba.jit(nopython=True, parallel=True, cache=True)
 def adjust_box_anns(bbox, scale_ratio, padw, padh, w_max, h_max):
     #bbox[:, 0::2] = np.clip(bbox[:, 0::2] * scale_ratio + padw, 0, w_max)
     #bbox[:, 1::2] = np.clip(bbox[:, 1::2] * scale_ratio + padh, 0, h_max)
@@ -119,12 +122,14 @@ def adjust_box_anns(bbox, scale_ratio, padw, padh, w_max, h_max):
     return bbox
 
 
+@numba.jit(nopython=True, parallel=True, cache=True)
 def xyxy2xywh(bboxes):
     bboxes[:, 2] = bboxes[:, 2] - bboxes[:, 0]
     bboxes[:, 3] = bboxes[:, 3] - bboxes[:, 1]
     return bboxes
 
 
+@numba.jit(nopython=True, parallel=True, cache=True)
 def xyxy2cxcywh(bboxes):
     bboxes[:, 2] = bboxes[:, 2] - bboxes[:, 0]
     bboxes[:, 3] = bboxes[:, 3] - bboxes[:, 1]

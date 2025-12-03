@@ -14,67 +14,17 @@ from bytetrack.yolox.utils                import get_model_info
 from bytetrack.yolox.tracker.byte_tracker import BYTETracker
 from bytetrack.yolox.tracking_utils.timer import Timer
  
-from bytetrack.mot_engine import TORCH_MOT
+from bytetrack.mot_engine import TORCH_MOT 
 from mde.mde_engine       import TRT_MDE
 
 import pycuda.driver as cuda
 import pycuda.autoinit
 
+from tsvx_kernel import (
+    _depth_alpha_beta, _count_dim, _get_depth_at_box, _count_vertical, _calculate_fps)
+
 from tsvx_args import (
     AppArgs, ModelArgs, TrackArgs, FootageArgs, FontConfig, parse_args)
-
- 
-
-def _depth_alpha_beta(min_val, max_val):
-    alpha = 255.0 / (max_val - min_val) if max_val > min_val else 1.0
-    beta = -min_val * alpha
-    return alpha, beta
-
-def _count_dim(tlwh):
-    return np.array([int(tlwh[0]), int(tlwh[1]), int(tlwh[2]), int(tlwh[3])], dtype=np.int32)
-
-def _get_depth_at_box(depth_map, x, y, w, h):
- 
-    is_gpu = hasattr(depth_map, 'download')
-    if is_gpu:
- 
-        if depth_map.empty():
-            return np.nan
-        rows, cols = depth_map.size()
-    else:
- 
-        if depth_map.size == 0 or w <= 0 or h <= 0:
-            return np.nan
-        rows, cols = depth_map.shape[0], depth_map.shape[1]
-     
-    x = max(0, min(x, cols - 1))
-    y = max(0, min(y, rows - 1))
-    w = min(w, cols - x)
-    h = min(h, rows - y)
-    
-    if w <= 0 or h <= 0:
-        return np.nan
-    
-    if is_gpu:
-        stream = cv2.cuda_Stream()
-         
-        depth_cpu = depth_map.download(stream)
-        stream.waitForCompletion()
-         
-        region = depth_cpu[y:y+h, x:x+w]
-    else:
-        region = depth_map[y:y+h, x:x+w]
-    
-    total = np.sum(region)
-    count = region.size
-    
-    return total / count if count > 0 else np.nan
-
-def _count_vertical(w, h, threshold):
-    return w / h > threshold
-
-def _calculate_fps(current_time, start_time):
-    return 1.0 / ((current_time - start_time) + 1e-6)
 
 
 class Initialize:
@@ -245,7 +195,7 @@ class DepthProcess:
         self.offload = offload
          
         if optimize:
-            self._depth_alpha_beta_compiled = numba.jit(nopython=True)(_depth_alpha_beta)
+            self._depth_alpha_beta_compiled = numba.jit(nopython=True, cache=True)(_depth_alpha_beta)
         else:
             self._depth_alpha_beta_compiled = _depth_alpha_beta
 
@@ -285,7 +235,6 @@ class DepthProcess:
             depth_normalized_cpu = gpu_depth_normalized.download(stream)
             depth_colored = cv2.applyColorMap(depth_normalized_cpu, cv2.COLORMAP_BONE)
         else:
- 
             stream.waitForCompletion()
              
             depth_normalized_cpu = gpu_depth_normalized.download()
@@ -315,9 +264,9 @@ class TrackerProcess:
     def __init__(self, optimize, parallelism):
 
         if optimize:
-            self._count_dim_compiled = numba.jit(nopython=True)(_count_dim)
-            self._get_depth_compiled = numba.jit(nopython=True, parallel=parallelism)(_get_depth_at_box)
-            self._count_vertical_compiled = numba.jit(nopython=True)(_count_vertical)
+            self._count_dim_compiled = numba.jit(nopython=True, cache=True)(_count_dim)
+            self._get_depth_compiled = numba.jit(nopython=True, parallel=parallelism, cache=True)(_get_depth_at_box)
+            self._count_vertical_compiled = numba.jit(nopython=True, cache=True)(_count_vertical)
         else:
             self._count_dim_compiled = _count_dim
             self._get_depth_compiled = _get_depth_at_box

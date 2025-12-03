@@ -23,6 +23,7 @@ def export_trt(trt_path: str, onnx_path: str, use_fp16: bool):
     ret = engine.build(
         onnx_path,
         use_fp16,
+        enable_all_tactics=True,
         enable_preview=True,
     )
     e = time.time()

@@ -4,6 +4,7 @@ import os
 import os.path as osp
 import copy
 import torch
+import numba
 import torch.nn.functional as F
 
 from .kalman_filter import KalmanFilter
@@ -13,7 +14,6 @@ from .basetrack import BaseTrack, TrackState
 class STrack(BaseTrack):
     shared_kalman = KalmanFilter()
     def __init__(self, tlwh, score):
-
         # wait activate
         self._tlwh = np.asarray(tlwh, dtype=np.float32)
         self.kalman_filter = None
@@ -88,7 +88,6 @@ class STrack(BaseTrack):
         self.score = new_track.score
 
     @property
-    # @jit(nopython=True)
     def tlwh(self):
         """Get current position in bounding box format `(top left x, top left y,
                 width, height)`.
@@ -101,7 +100,6 @@ class STrack(BaseTrack):
         return ret
 
     @property
-    # @jit(nopython=True)
     def tlbr(self):
         """Convert bounding box to format `(min x, min y, max x, max y)`, i.e.,
         `(top left, bottom right)`.
@@ -111,8 +109,8 @@ class STrack(BaseTrack):
         return ret
 
     @staticmethod
-    # @jit(nopython=True)
-    def tlwh_to_xyah(tlwh):
+    @numba.njit(cache=True)
+    def _tlwh_to_xyah_njit(tlwh):
         """Convert bounding box to format `(center x, center y, aspect ratio,
         height)`, where the aspect ratio is `width / height`.
         """
@@ -121,22 +119,34 @@ class STrack(BaseTrack):
         ret[2] /= ret[3]
         return ret
 
-    def to_xyah(self):
-        return self.tlwh_to_xyah(self.tlwh)
+    @staticmethod
+    def tlwh_to_xyah(tlwh):
+        return STrack._tlwh_to_xyah_njit(tlwh)
 
     @staticmethod
-    # @jit(nopython=True)
-    def tlbr_to_tlwh(tlbr):
+    @numba.njit(cache=True)
+    def _tlbr_to_tlwh_njit(tlbr):
         ret = np.asarray(tlbr).copy()
         ret[2:] -= ret[:2]
         return ret
 
     @staticmethod
-    # @jit(nopython=True)
-    def tlwh_to_tlbr(tlwh):
+    def tlbr_to_tlwh(tlbr):
+        return STrack._tlbr_to_tlwh_njit(tlbr)
+
+    @staticmethod
+    @numba.njit(cache=True)
+    def _tlwh_to_tlbr_njit(tlwh):
         ret = np.asarray(tlwh).copy()
         ret[2:] += ret[:2]
         return ret
+
+    @staticmethod
+    def tlwh_to_tlbr(tlwh):
+        return STrack._tlwh_to_tlbr_njit(tlwh)
+
+    def to_xyah(self):
+        return self.tlwh_to_xyah(self.tlwh)
 
     def __repr__(self):
         return 'OT_{}_({}-{})'.format(self.track_id, self.start_frame, self.end_frame)

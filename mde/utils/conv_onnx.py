@@ -4,7 +4,7 @@ import torch.onnx
 import glob
 import sys, os
 
-from src.mde.depth_anything_v2.dpt import DepthAnythingV2
+from mde.depth_anything_v2.dpt import DepthAnythingV2
 
 
 def main():
@@ -30,11 +30,9 @@ def main():
     depth_anything = depth_anything.to('cpu').eval()
  
     dummy_input = torch.ones((3, args.input_size, args.input_size)).unsqueeze(0)
- 
-    example_output = depth_anything.forward(dummy_input)
 
     onnx_path = f'./onnx_models/depth_anything_v2_{args.encoder}.onnx'
- 
+
     torch.onnx.export(depth_anything, dummy_input, onnx_path, opset_version=18, input_names=["input"], output_names=["output"], verbose=True)
 
     print(f"Model exported to {onnx_path}")

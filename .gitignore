@@ -3,6 +3,7 @@ __pycache__
 assets
 onnx_models/
 trt_models/
+footage/
 *.pth
 *.engine
 *.mp4
@@ -19,6 +20,10 @@ Python-*
 python-*/
 checkpoints/*.pth
 checkpoints/*.pth.tar
+*.*-rep
+*.html
+*.sqlite
+
  
 
 
