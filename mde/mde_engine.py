@@ -8,6 +8,11 @@ import pycuda.autoinit
 
 class TRT_MDE:
     def __init__(self, trt_path):
+
+        cuda.init()
+        self.cuda_context = cuda.Device(0).make_context()
+        cp.cuda.Device(0).use()
+
         self.logger = trt.Logger(trt.Logger.WARNING) 
         with open(trt_path, 'rb') as f:
             self.engine = trt.Runtime(self.logger).deserialize_cuda_engine(f.read())
@@ -18,10 +23,10 @@ class TRT_MDE:
         self.event = cuda.Event()
         self.stream = cuda.Stream()
         self.cv_stream = cv2.cuda.Stream()
-        # arrange gpu mem.
-        self.gpu_mat        = cv2.cuda_GpuMat()
+
 
         # avoid repeating new ctx allocation by init. memory block
+        self.gpu_mat        = cv2.cuda_GpuMat()
         self._gpu_resized   = cv2.cuda_GpuMat()
         self._gpu_rgb       = cv2.cuda_GpuMat()
         self._gpu_depth     = cv2.cuda_GpuMat()
@@ -81,21 +86,36 @@ class TRT_MDE:
         )
 
         return rgb
-    
+
     def _preprocess(self, gpu_mat):
-        
-        self.cv_stream.waitForCompletion()
-        img_np = gpu_mat.download(stream=self.cv_stream) # CV2 > cpu > CUPY
-        
-        # Numpy > CUPY
-        img_cp = cp.asarray(img_np)
+
+        # d2d for CV2 mat to CuPy via pointers
+        w, h = gpu_mat.size()
+        c = gpu_mat.channels()
+        pitch = gpu_mat.step
+        src = int(gpu_mat.cudaPtr())
+
+        img_cp = cp.empty((h, w, c), dtype=cp.uint8)
+        dst = img_cp.data.ptr
+
+        row_bytes = w * c
+
+        for i in range(h):
+            cp.cuda.runtime.memcpy(
+                dst + row_bytes * i,
+                src + pitch * i,
+                row_bytes,
+                cp.cuda.runtime.memcpyDeviceToDevice
+            )
+
         img_cp = img_cp.astype(cp.float16) / 255.0
         img_cp = (img_cp - self.mean) / self.std
         img_cp = cp.transpose(img_cp, (2, 0, 1))
         img_cp = cp.expand_dims(img_cp, axis=0)
-        
+
         return img_cp
-    
+
+        
     def trt_dthPipe(self, img_flat):
         # pass CuPy context to TRT context
         cuda.memcpy_dtod_async(
@@ -104,7 +124,6 @@ class TRT_MDE:
             img_flat.nbytes,
             self.stream
         )
-            
         for inp in self.inputs:
             self.context.set_tensor_address(inp['name'], int(inp['device']))
         for out in self.outputs:
@@ -118,7 +137,6 @@ class TRT_MDE:
             self.outputs[0]['device'], 
             self.stream
         )
-            
         self.stream.synchronize()
             
         output_shape = self.context.get_tensor_shape(self.outputs[0]['name'])
