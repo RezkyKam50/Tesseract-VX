@@ -9,10 +9,6 @@ import pycuda.autoinit
 class TRT_MDE:
     def __init__(self, trt_path):
 
-        cuda.init()
-        self.cuda_context = cuda.Device(0).make_context()
-        cp.cuda.Device(0).use()
-
         self.logger = trt.Logger(trt.Logger.WARNING) 
         with open(trt_path, 'rb') as f:
             self.engine = trt.Runtime(self.logger).deserialize_cuda_engine(f.read())
@@ -32,8 +28,8 @@ class TRT_MDE:
         self._gpu_depth     = cv2.cuda_GpuMat()
 
 
-        self.mean = cp.array([0.485, 0.456, 0.406], dtype=cp.float32)
-        self.std = cp.array([0.229, 0.224, 0.225], dtype=cp.float32)
+        self.mean   = cp.array([0.485, 0.456, 0.406], dtype=cp.float32)
+        self.std    = cp.array([0.229, 0.224, 0.225], dtype=cp.float32)
          
         for i in range(self.engine.num_io_tensors):
             tensor_name = self.engine.get_tensor_name(i)
@@ -87,7 +83,7 @@ class TRT_MDE:
 
         return rgb
 
-    def _preprocess(self, gpu_mat):
+    def _cv2tocp(self, gpu_mat):
 
         # d2d for CV2 mat to CuPy via pointers
         w, h = gpu_mat.size()
@@ -107,7 +103,12 @@ class TRT_MDE:
                 row_bytes,
                 cp.cuda.runtime.memcpyDeviceToDevice
             )
+            
+        return img_cp
 
+    def _preprocess(self, gpu_mat):
+
+        img_cp = self._cv2tocp(gpu_mat)
         img_cp = img_cp.astype(cp.float16) / 255.0
         img_cp = (img_cp - self.mean) / self.std
         img_cp = cp.transpose(img_cp, (2, 0, 1))
