@@ -17,6 +17,8 @@ from bytetrack.yolox.tracking_utils.timer import Timer
 from bytetrack.mot_engine import TORCH_MOT 
 from mde.mde_engine       import TRT_MDE
 
+
+
 import pycuda.driver as cuda
 import pycuda.autoinit
 
@@ -339,6 +341,7 @@ class TSVX:
         else:
             self._calculate_fps_compiled = _calculate_fps
 
+        # cap: cv2.VideoCapture.read() returns np.ndarray
         self.cap, self.source_type, self.fps, self.width, self.height, self.total_frames = Init.initialize_video_source(debugging=args.debug)
 
         self.depth_trt_inference = LoadIns.mde_model()
@@ -366,25 +369,33 @@ class TSVX:
         if self.source_type == "video":
             print("  'space' - pause/resume")
 
+    def get_frames(self):
+        # cap: cv2.VideoCapture.read() -> np.ndarray
+        ret, frame = self.cap.read()
+        if not ret:
+            if self.source_type == "video":
+                logger.info("End of video reached")
+            else:
+                logger.warning("Frame capture failed")
+                sys.exit(0)
+
+        return frame
+
     def depth_tracking_loop(self):
         self.frame_id = 0
         self.paused = False
 
         while True:
             if not self.paused:
-                ret, frame = self.cap.read()
-                if not ret:
-                    if self.source_type == "video":
-                        logger.info("End of video reached")
-                    else:
-                        logger.warning("Frame capture failed")
-                    break
+
+                frame = self.get_frames() # returns numpy array
                 
                 self.start_time = time.time()
-                depth = self.depth_trt_inference.infer(frame)  
+
+                depth = self.depth_trt_inference.infer(frame) # returns numpy array of the depth 
                 depth_map, depth_colored = self.DepthInstance.process_depth_map(depth, frame.shape, self.stream_1)
 
-                outputs, img_info = self.bytetrack_predictor.inference(frame, self.bytetrack_timer)
+                outputs, img_info = self.bytetrack_predictor.inference(frame, self.bytetrack_timer) 
                 
                 self.tracked_count = 0
 

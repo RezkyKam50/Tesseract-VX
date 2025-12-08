@@ -26,3 +26,9 @@
 [submodule "thirdparty/cupy"]
 	path = thirdparty/cupy
 	url = https://github.com/cupy/cupy.git
+[submodule "thirdparty/PyAV"]
+	path = thirdparty/PyAV
+	url = https://github.com/PyAV-Org/PyAV.git
+[submodule "thirdparty/gstreamer"]
+	path = thirdparty/gstreamer
+	url = https://gitlab.freedesktop.org/gstreamer/gstreamer.git

@@ -1,7 +1,7 @@
 import cupy as cp
 import nvtx
 
-bilinear_kernel_2d = cp.RawKernel(r'''
+bilinear_kernel_2c = cp.RawKernel(r'''
 extern "C" __global__
 void resize_bilinear(
     const float* __restrict__ src,
@@ -44,7 +44,7 @@ void resize_bilinear(
 }
 ''', 'resize_bilinear')
 
-bilinear_kernel_3d = cp.RawKernel(r'''
+bilinear_kernel_3c = cp.RawKernel(r'''
 extern "C" __global__
 void resize_bilinear_3d(
     const float* __restrict__ src,
@@ -111,7 +111,7 @@ void resize_bilinear_3d(
     }
      
 }
-''', 'resize_bilinear_3d')
+''', 'resize_bilinear_3c')
 
 bgr2rgb_float_kernel = cp.RawKernel(r'''
 extern "C" __global__
@@ -148,7 +148,7 @@ void bgr2rgb_float(
 }
 ''', 'bgr2rgb_float')
 
-def cupy_resize_2d(depth_cp, out_h, out_w, block_size):
+def cupy_resize_2c(depth_cp, out_h, out_w, block_size):
     
     in_h, in_w = depth_cp.shape
     depth_cp_f = depth_cp.astype(cp.float32, copy=False)
@@ -159,7 +159,7 @@ def cupy_resize_2d(depth_cp, out_h, out_w, block_size):
         (out_h + block_size[1] - 1) // block_size[1]
     )
      
-    bilinear_kernel_2d(
+    bilinear_kernel_2c(
         grid,
         block_size,
         (depth_cp_f, out_cp, in_h, in_w, out_h, out_w)
@@ -167,7 +167,7 @@ def cupy_resize_2d(depth_cp, out_h, out_w, block_size):
      
     return out_cp
 
-def cupy_resize_3d(img_cp, out_w, out_h, block_size):
+def cupy_resize_3c(img_cp, out_w, out_h, block_size):
     
     h, w, c = img_cp.shape
     assert c == 3, "Only 3-channel images supported"
@@ -180,7 +180,7 @@ def cupy_resize_3d(img_cp, out_w, out_h, block_size):
         (out_h + block_size[1] - 1) // block_size[1]
     )
       
-    bilinear_kernel_3d(
+    bilinear_kernel_3c(
         grid,
         block_size,
         (
@@ -188,7 +188,7 @@ def cupy_resize_3d(img_cp, out_w, out_h, block_size):
             out,
             h, w,
             out_h, out_w,
-            3  # channels
+            c  # channels
         )
     )
      

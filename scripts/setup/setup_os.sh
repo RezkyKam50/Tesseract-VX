@@ -6,7 +6,7 @@ export CUDAARCHS="89"
 
 if [[ "$ID" == "arch" ]]; then
 
-    sudo pacman -S python-protobuf python-flatbuffers python-pip python-setuptools python-virtualenv gcc-14 cuda ninja meson aria2 ccache cmake make ffmpeg --noconfirm
+    sudo pacman -S python-protobuf python-flatbuffers python-pip python-setuptools python-virtualenv gcc-14 cuda ninja meson aria2 ccache cmake make ffmpeg python-gobject glib2 glib2-devel --noconfirm
 
 elif [[ "$ID" == "fedora" ]]; then
 

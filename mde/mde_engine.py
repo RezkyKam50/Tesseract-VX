@@ -2,7 +2,8 @@ import cupy as cp
 from mde.mono_kernel import *
 from mde.fused_kernel import *
 import tensorrt as trt
-import nvtx
+from nvtx import push_range, pop_range
+
 import pycuda.driver as cuda
 import pycuda.autoinit
 
@@ -16,6 +17,7 @@ class TRT_MDE:
         self.inputs = []
         self.outputs = []
         self.bindings = []
+        self.output_bindings = [] 
         self.event = cuda.Event()
         self.stream = cuda.Stream()
         self.gpu_block = (32, 16) # for older architecture series < 20 use 16, 16
@@ -23,6 +25,7 @@ class TRT_MDE:
         self.mean = cp.array([0.485, 0.456, 0.406], dtype=cp.float32)
         self.std = cp.array([0.229, 0.224, 0.225], dtype=cp.float32)
  
+
          
         for i in range(self.engine.num_io_tensors):
             tensor_name = self.engine.get_tensor_name(i)
@@ -49,35 +52,37 @@ class TRT_MDE:
                     'shape': shape,
                     'dtype': dtype
                 })
+                self.output_bindings.append(int(device_mem))
          
         self.input_shape = self.inputs[0]['shape']
         self.input_h = self.input_shape[2] if self.input_shape[2] > 0 else 518
         self.input_w = self.input_shape[3] if self.input_shape[3] > 0 else 518
-          
 
     def _resize(self, img_cp, fused):
- 
+        push_range("Resize Kernel Func.")
         if fused:
-            rgb_cp = fused_resize_bgr2rgb_3d(img_cp, self.input_h, self.input_w, self.gpu_block)
+            rgb_cp = fused_resize_bgr2rgb_3c(img_cp, self.input_h, self.input_w, self.gpu_block)
         else:
-            resized_cp = cupy_resize_3d(img_cp, self.input_w, self.input_h, self.gpu_block)
+            resized_cp = cupy_resize_3c(img_cp, self.input_w, self.input_h, self.gpu_block)
             rgb_cp = cupy_cvt_bgr2rgb_float(resized_cp, self.gpu_block)
 
         cp.cuda.stream.get_current_stream().synchronize()
-
+        pop_range()
         return rgb_cp
     
     def _preprocess(self, img_cp):
-
+        push_range("Preprocess Kernel Func.")
         img_cp = img_cp.astype(cp.float32) / 255.0
         img_cp = (img_cp - self.mean) / self.std
         img_cp = cp.transpose(img_cp, (2, 0, 1))
         img_cp = cp.expand_dims(img_cp, axis=0)
- 
+
+        cp.cuda.stream.get_current_stream().synchronize()
+        pop_range()
         return img_cp
     
     def _trt2cp2trt(self, output_shape):
-
+        push_range("Cupy Wrapper for TRT CTX Func.")
         output_mem = cp.cuda.UnownedMemory(
         int(self.outputs[0]['device']),
         self.outputs[0]['host'].nbytes,
@@ -90,10 +95,12 @@ class TRT_MDE:
             memptr=output_ptr
         )
 
+        cp.cuda.stream.get_current_stream().synchronize()
+        pop_range()
         return depth_cp
 
     def _postprocess(self, input_image, depth_cp):
-
+        push_range("Postprocess Func.")
         if depth_cp.ndim == 4:
             depth_cp = depth_cp[0, 0]  
         elif depth_cp.ndim == 3:
@@ -101,13 +108,15 @@ class TRT_MDE:
         
         depth_cp = cp.ascontiguousarray(depth_cp.astype(cp.float32))
         original_h, original_w = input_image.shape[:2]
-        depth_resized_cp = cupy_resize_2d(depth_cp, original_h, original_w, self.gpu_block)
- 
+        depth_resized_cp = cupy_resize_2c(depth_cp, original_h, original_w, self.gpu_block)
+
+        cp.cuda.stream.get_current_stream().synchronize()
+        pop_range()
         return cp.asnumpy(depth_resized_cp)
 
     def infer(self, input_image: cp.asnumpy):
 
-        nvtx.push_range("MDE Inference", color="red")
+        push_range("MDE Inference", color="red")
 
         # check if 'input_image' is cupy or numpy array
         # directly feeding cupy array can minimize latency
@@ -122,15 +131,18 @@ class TRT_MDE:
         img_flat = img_cp.ravel()
             
         self.context.set_tensor_address(self.inputs[0]['name'], img_flat.data.ptr)
-        for out in self.outputs:
-            self.context.set_tensor_address(out['name'], int(out['device']))
+
+        for i, out in enumerate(self.outputs):
+            self.context.set_tensor_address(out['name'], self.output_bindings[i])
+            
         self.context.execute_async_v3(stream_handle=self.stream.handle)
         output_shape = self.context.get_tensor_shape(self.outputs[0]['name'])
 
         depth_cp = self._trt2cp2trt(output_shape)
 
         depth_result = self._postprocess(input_image, depth_cp)
-             
-        nvtx.pop_range()
+
+        self.stream.synchronize()
+        pop_range()
         
         return depth_result
