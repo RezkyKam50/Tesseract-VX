@@ -1,7 +1,5 @@
-# vim: expandtab:ts=4:sw=4
 import numpy as np
 import scipy.linalg
-
 
 """
 Table for the 0.95 quantile of the chi-square distribution with N degrees of
@@ -123,8 +121,7 @@ class KalmanFilter(object):
             self._motion_mat, covariance, self._motion_mat.T)) + motion_cov
 
         return mean, covariance
- 
- 
+  
     def project(self, mean, covariance):
         """Project state distribution to measurement space.
 
@@ -153,7 +150,6 @@ class KalmanFilter(object):
         covariance = np.linalg.multi_dot((
             self._update_mat, covariance, self._update_mat.T))
         return mean, covariance + innovation_cov
-
     
     def multi_predict(self, mean, covariance):
         """Run Kalman filter prediction step (Vectorized version).
@@ -228,7 +224,6 @@ class KalmanFilter(object):
         new_covariance = covariance - np.linalg.multi_dot((
             kalman_gain, projected_cov, kalman_gain.T))
         return new_mean, new_covariance
-
  
     def gating_distance(self, mean, covariance, measurements,
                         only_position=False, metric='maha'):

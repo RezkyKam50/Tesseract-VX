@@ -11,5 +11,7 @@ cd .. && cd onnxoptimizer
 uv pip install . --no-build-isolation
 cd .. && cd onnxsim
 uv pip install . --no-build-isolation
+cd .. && cd cupy
+uv pip install . --no-build-isolation
 cd .. && cd ..
 

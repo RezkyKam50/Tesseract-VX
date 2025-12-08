@@ -11,7 +11,7 @@ from yolox.data.data_augment import preproc
 from yolox.utils import postprocess
 
 class TORCH_MOT:
-    def __init__(self, model, exp, device, trt_file=None, decoder=None, fp16=True):
+    def __init__(self, model, exp, device, trt_file=None, decoder=None):
         self.model = model
         self.decoder = decoder
         self.num_classes = exp.num_classes
@@ -19,7 +19,6 @@ class TORCH_MOT:
         self.nmsthre = exp.nmsthre
         self.test_size = exp.test_size
         self.device = device
-        self.fp16 = fp16
         self.rgb_means = (0.485, 0.456, 0.406)
         self.std = (0.229, 0.224, 0.225)
          
@@ -41,9 +40,6 @@ class TORCH_MOT:
         img, ratio = preproc(img, self.test_size, self.rgb_means, self.std)
         img_info["ratio"] = ratio
         img = torch.from_numpy(img).unsqueeze(0).float().to(self.device)
-        
-        if self.fp16:
-            img = img.half()
 
         with torch.no_grad():
             timer.tic()

@@ -23,3 +23,6 @@
 [submodule "thirdparty/ffmpeg"]
 	path = thirdparty/ffmpeg
 	url = https://git.ffmpeg.org/ffmpeg.git
+[submodule "thirdparty/cupy"]
+	path = thirdparty/cupy
+	url = https://github.com/cupy/cupy.git

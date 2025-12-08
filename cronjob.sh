@@ -28,7 +28,7 @@ Scheduled commit every 1:00AM local time.
 EOF
 }
 
-cd $HOME/Lunaria || exit 1
+cd $HOME/Tesseract-VX || exit 1
 git add .
  
 if ! git diff-index --quiet HEAD --; then

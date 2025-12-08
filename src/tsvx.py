@@ -169,7 +169,7 @@ class LoadModel:
         model.head.decode_in_inference = False
 
         decoder     = model.head.decode_outputs
-        predictor   = TORCH_MOT(model, exp, device, ModelArgs.MOT_PATH, decoder, fp16=False)
+        predictor   = TORCH_MOT(model, exp, device, ModelArgs.MOT_PATH, decoder)
         
         tracker_args = argparse.Namespace(
             track_thresh=TrackArgs.TRACK_THRESH,
@@ -190,72 +190,56 @@ class DepthProcess:
     '''
     MDE Instance for RT Depth Estimation
     '''
-    def __init__(self, optimize, offload):
+    def __init__(self, optimize, gpu):
+        self.gpu_depth = cv2.cuda_GpuMat()
+        self.gpu = gpu
         
-        self.offload = offload
-
-        # arrange mem.
-        self.gpu_depth  = cv2.cuda_GpuMat()
-         
         if optimize:
             self._depth_alpha_beta_compiled = numba.jit(nopython=True, cache=True)(_depth_alpha_beta)
         else:
             self._depth_alpha_beta_compiled = _depth_alpha_beta
 
     def process_depth_map(self, depth, frame_shape, stream):
+        if self.gpu:
+            self.gpu_depth.upload(depth)
+            depth_map, gpu_depth_resized = self.resize_depth(self.gpu_depth, frame_shape, stream)
+        else:
+            depth_map = cv2.resize(depth, (frame_shape[1], frame_shape[0]))
+            gpu_depth_resized = None
 
-        # -- offload -> gpu     : depth obj., lane
-        self.gpu_depth.upload(depth)
-        #
-        depth_map, gpu_depth_resized = self.resize_depth(
-            self.gpu_depth, frame_shape, stream)
-        #
-        min_val, max_val, _, _  = cv2.cuda.minMaxLoc(gpu_depth_resized)
-        alpha, beta             = self._depth_alpha_beta_compiled(min_val, max_val)
+        if self.gpu:
+            min_val, max_val, _, _ = cv2.cuda.minMaxLoc(gpu_depth_resized)
+        else:
+            min_val, max_val, _, _ = cv2.minMaxLoc(depth_map)
 
-        depth_colored = self.normalize_depth(
-            gpu_depth_resized, alpha, beta, stream)
+        alpha, beta = self._depth_alpha_beta_compiled(min_val, max_val)
+
+        if self.gpu:
+            depth_colored = self.normalize_depth(gpu_depth_resized, alpha, beta, stream)
+        else:
+            depth_normalized = cv2.convertScaleAbs(depth_map, alpha=alpha, beta=beta)
+            depth_colored = cv2.applyColorMap(depth_normalized, cv2.COLORMAP_BONE)
 
         return depth_map, depth_colored
 
     def resize_depth(self, gpu_depth, frame_shape, stream):
-        target_size             = (frame_shape[1], frame_shape[0])
-        gpu_depth_resized       = cv2.cuda.resize(gpu_depth, target_size, stream=stream)
-
-        if self.offload is True:
-            # -- offload -> cpu     : resized
-            depth_map               = gpu_depth_resized.download(stream)
+        target_size = (frame_shape[1], frame_shape[0])
+        if self.gpu:
+            gpu_depth_resized = cv2.cuda.resize(gpu_depth, target_size, stream=stream)
+            depth_map = gpu_depth_resized.download(stream)
         else:
-            depth_map               = gpu_depth_resized
-
+            depth_map = cv2.resize(gpu_depth, target_size)
+            gpu_depth_resized = None
         return depth_map, gpu_depth_resized
 
     def normalize_depth(self, gpu_depth_resized, alpha, beta, stream):
-        gpu_depth_normalized = gpu_depth_resized.convertTo(cv2.CV_8UC3, alpha, beta, stream=stream)
-        
-        if self.offload is True:
+        if self.gpu:
+            gpu_depth_normalized = gpu_depth_resized.convertTo(cv2.CV_8UC3, alpha, beta, stream=stream)
             depth_normalized_cpu = gpu_depth_normalized.download(stream)
             depth_colored = cv2.applyColorMap(depth_normalized_cpu, cv2.COLORMAP_BONE)
         else:
-            stream.waitForCompletion()
-             
-            depth_normalized_cpu = gpu_depth_normalized.download()
-             
-            depth_gpu = cp.asarray(depth_normalized_cpu)
- 
-            depth_colored_gpu = cp.zeros((depth_gpu.shape[0], depth_gpu.shape[1], 3), dtype=cp.uint8)
-             
-            x = depth_gpu.astype(cp.float32) / 255.0
-            r = cp.minimum(255, cp.maximum(0, (1.0 - x) * 255))
-            g = cp.minimum(255, cp.maximum(0, (1.0 - x * 0.5) * 255))
-            b = cp.minimum(255, cp.maximum(0, x * 255))
-            
-            depth_colored_gpu[:, :, 0] = b.astype(cp.uint8)
-            depth_colored_gpu[:, :, 1] = g.astype(cp.uint8)
-            depth_colored_gpu[:, :, 2] = r.astype(cp.uint8)
-            
-            depth_colored = cp.asnumpy(depth_colored_gpu)
-        
+            depth_normalized = cv2.convertScaleAbs(gpu_depth_resized, alpha=alpha, beta=beta)
+            depth_colored = cv2.applyColorMap(depth_normalized, cv2.COLORMAP_BONE)
         return depth_colored
 
 
@@ -266,13 +250,13 @@ class TrackerProcess:
     def __init__(self, optimize, parallelism):
 
         if optimize:
-            self._count_dim_compiled = numba.jit(nopython=True, cache=True)(_count_dim)
-            self._get_depth_compiled = numba.jit(nopython=True, parallel=parallelism, cache=True)(_get_depth_at_box)
-            self._count_vertical_compiled = numba.jit(nopython=True, cache=True)(_count_vertical)
+            self._count_dim_compiled        = numba.njit(cache=True)(_count_dim)
+            self._get_depth_compiled        = numba.njit(parallel=parallelism, cache=True)(_get_depth_at_box)
+            self._count_vertical_compiled   = numba.njit(cache=True)(_count_vertical)
         else:
-            self._count_dim_compiled = _count_dim
-            self._get_depth_compiled = _get_depth_at_box
-            self._count_vertical_compiled = _count_vertical
+            self._count_dim_compiled        = _count_dim
+            self._get_depth_compiled        = _get_depth_at_box
+            self._count_vertical_compiled   = _count_vertical
         
     def count_dim(self, tlwh):
         dims = self._count_dim_compiled(tlwh)
@@ -344,10 +328,11 @@ class TSVX:
     MOT & MDE Wrapper Instance for TesseractVX
     '''
     def __init__(self, Init, LoadIns, args):
+
         self.args = args
 
         self.TrackerInstance    = TrackerProcess(optimize=args.optimize, parallelism=args.parallel)
-        self.DepthInstance      = DepthProcess(optimize=args.optimize, offload=args.offload)
+        self.DepthInstance      = DepthProcess(optimize=args.optimize, gpu=args.gpu)
  
         if args.optimize:
             self._calculate_fps_compiled = numba.jit(nopython=args.optimize)(_calculate_fps)
@@ -364,9 +349,6 @@ class TSVX:
         if args.save_video:
             self.video_writer = Init.initialize_video_writer()
             
-        # lane for separate depth processing after MDE infer 
-        # Infer -> Depth Process -> BBProcess, haven't benchmarked the benefit of 
-        # this additional stream yet.
         self.stream_1 = cv2.cuda.Stream()
 
     def create_combined_view(self, frame, depth_colored):

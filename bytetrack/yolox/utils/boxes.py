@@ -30,9 +30,8 @@ def filter_box(output, scale_range):
     h = output[:, 3] - output[:, 1]
     keep = (w * h > min_scale * min_scale) & (w * h < max_scale * max_scale)
     return output[keep]
-
-
-def postprocess(prediction, num_classes, conf_thre=0.7, nms_thre=0.45):
+ 
+def get_pred_corner(prediction):
     box_corner = prediction.new(prediction.shape)
     box_corner[:, :, 0] = prediction[:, :, 0] - prediction[:, :, 2] / 2
     box_corner[:, :, 1] = prediction[:, :, 1] - prediction[:, :, 3] / 2
@@ -41,6 +40,13 @@ def postprocess(prediction, num_classes, conf_thre=0.7, nms_thre=0.45):
     prediction[:, :, :4] = box_corner[:, :, :4]
 
     output = [None for _ in range(len(prediction))]
+
+    return output
+
+def postprocess(prediction, num_classes, conf_thre=0.7, nms_thre=0.45):
+
+    output = get_pred_corner(prediction)
+
     for i, image_pred in enumerate(prediction):
 
         # If none are remaining => process next image

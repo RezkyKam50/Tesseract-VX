@@ -21,7 +21,7 @@ class TrackArgs:
     MATCH_THRESH = 0.9
     ASPECT_RATIO_THRESH = 1.6
     MIN_BOX_AREA = 10
-    FRAME_RATE = 120
+    FRAME_RATE = 30
 
     # Misc.
     HIGHLIGHT_ALPHA = 0.1   
@@ -90,9 +90,9 @@ def parse_args():
         help="Enable LLVM"
     )
     parser.add_argument(
-        "--offload",
+        "--gpu",
         action="store_true",
-        help="Enable GPU to CPU Offloading"
+        help="Enable GPU Offloading"
     )
     parser.add_argument(
         "--debug",
