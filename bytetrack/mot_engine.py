@@ -25,6 +25,11 @@ class TRT_MOT:
         self.confthre = exp.test_conf
         self.nmsthre = exp.nmsthre
         self.test_size = exp.test_size
+
+        print(f"self.num_classes {self.num_classes}")
+        print(f"self.confthre {self.confthre}")
+        print(f"self.nmsthre {self.nmsthre}")
+        print(f"self.test_size {self.test_size}")
         self.device = device
 
         self.gpu_block2c = (32, 16) # for older architecture series < 20 use 16, 16
@@ -84,19 +89,7 @@ class TRT_MOT:
 
         target_height = int(img.shape[0] * r)
         target_width = int(img.shape[1] * r)
-
-         
- 
-        # padded_img[:target_height, :target_width, :] = resized_img
-        # padded_img = padded_img[:, :, ::-1] / 255.0  
-        # mean_array = cp.array(self.mean).reshape(1, 1, 3)
-        # padded_img -= mean_array
-        # std_array = cp.array(self.std).reshape(1, 1, 3)
-        # padded_img /= std_array
-        # padded_img = padded_img.transpose((2, 0, 1))
-        # padded_img = cp.ascontiguousarray(padded_img, dtype=cp.float32)
         
-
         if fused:
             padded_img = cust_mot_resize_preprocess_chwT(
                 img,
@@ -108,8 +101,7 @@ class TRT_MOT:
                 self.std,
                 self.gpu_block3c
             )
-            # print(padded_img.shape)
-            # (3, 800, 1440) 
+
         else:
             resized_img = cupy_resize_3c(
                 img, 
@@ -133,8 +125,7 @@ class TRT_MOT:
                 padded_img,
                 self.gpu_block3c
             )
-            # print(padded_img.shape)
-            # (3, 800, 1440)
+
         
         return padded_img, r
 
@@ -170,7 +161,6 @@ class TRT_MOT:
         img, ratio = self.preproc(img, self.test_size,  fused=False)
 
         img_info["ratio"] = ratio
-        timer.tic()
              
         img_cp = cp.asarray(img, dtype=cp.float32)
         if img_cp.ndim == 3:
@@ -198,6 +188,5 @@ class TRT_MOT:
             self.confthre, 
             self.nmsthre
         )
-         
-        # sanitycheck(outputs)
+          
         return outputs, img_info

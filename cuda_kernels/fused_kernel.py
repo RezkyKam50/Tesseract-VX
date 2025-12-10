@@ -199,6 +199,16 @@ def cust_mot_fused_preproc_hwcT(
     
     return padded_img_chw
 
+
+# padded_img[:target_height, :target_width, :] = resized_img
+# padded_img = padded_img[:, :, ::-1] / 255.0  
+# mean_array = cp.array(self.mean).reshape(1, 1, 3)
+# padded_img -= mean_array
+# std_array = cp.array(self.std).reshape(1, 1, 3)
+# padded_img /= std_array
+# padded_img = padded_img.transpose((2, 0, 1))
+# padded_img = cp.ascontiguousarray(padded_img, dtype=cp.float32)
+
 _cust_fused_resize_preprocess_chwT = cp.RawKernel(r'''
 extern "C" __global__
 void fused_resize_preprocess_transpose(

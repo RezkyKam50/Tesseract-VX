@@ -122,9 +122,13 @@ class TRT_MDE:
         pop_range()
         return depth_cp
 
-    def _postprocess(self, input_image, depth_cp):
+    def _postprocess(self, input_image, depth_cp, batched=False):
+        if not batched:
+            depth_cp = depth_cp[0]   
+
         push_range("Postprocess Func.")
         depth_cp = cp.ascontiguousarray(depth_cp.astype(cp.float32)) # returns h, w
+        print(depth_cp.shape)
         original_h, original_w = input_image.shape[:2]
         depth_resized_cp = cupy_resize_2c(depth_cp, original_h, original_w, self.gpu_block2c)
         pop_range()
@@ -145,8 +149,8 @@ class TRT_MDE:
             img_cp = cp.asarray(input_image)
  
 
-        rgb_cp = self._resize(img_cp, fused=False)
-        img_cp = self._preprocess(rgb_cp, fused=False)
+        rgb_cp = self._resize(img_cp, fused=True)
+        img_cp = self._preprocess(rgb_cp, fused=True)
 
         img_flat = img_cp.ravel()
             
