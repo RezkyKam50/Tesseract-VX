@@ -127,8 +127,7 @@ class TRT_MDE:
             depth_cp = depth_cp[0]   
 
         push_range("Postprocess Func.")
-        depth_cp = cp.ascontiguousarray(depth_cp.astype(cp.float32)) # returns h, w
-        print(depth_cp.shape)
+        depth_cp = cp.ascontiguousarray(depth_cp.astype(cp.float32)) # returns h, w if not batched
         original_h, original_w = input_image.shape[:2]
         depth_resized_cp = cupy_resize_2c(depth_cp, original_h, original_w, self.gpu_block2c)
         pop_range()
