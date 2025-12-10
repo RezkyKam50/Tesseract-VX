@@ -33,7 +33,7 @@ class TRT_MOT:
         self.device = device
 
         self.gpu_block2c = (32, 16) # for older architecture series < 20 use 16, 16
-        self.gpu_block3c = (32, 16, 1)  
+        self.gpu_block3c = (16, 8, 4)  
 
         self.mean = cp.array([0.485, 0.456, 0.406], dtype=cp.float32)
         self.std = cp.array([0.229, 0.224, 0.225], dtype=cp.float32)
@@ -78,7 +78,7 @@ class TRT_MOT:
                 })
                 self.output_bindings.append(int(device_mem))
 
-    def preproc(self, image, input_size, fused):
+    def preproc(self, image, input_size: tuple, fused):
 
         padded_img = cp.ones((input_size[0], input_size[1], 3)) * 114.0
 
@@ -186,7 +186,8 @@ class TRT_MOT:
             outputs, 
             self.num_classes, 
             self.confthre, 
-            self.nmsthre
+            self.nmsthre,
+            self.gpu_block3c
         )
           
         return outputs, img_info
