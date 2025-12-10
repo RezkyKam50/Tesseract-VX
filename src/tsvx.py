@@ -14,7 +14,7 @@ from bytetrack.yolox.utils                import get_model_info
 from bytetrack.yolox.tracker.byte_tracker import BYTETracker
 from bytetrack.yolox.tracking_utils.timer import Timer
  
-from bytetrack.mot_engine import TORCH_MOT 
+from bytetrack.mot_engine import TRT_MOT
 from mde.mde_engine       import TRT_MDE
 
 
@@ -168,11 +168,9 @@ class LoadModel:
         model.eval()
         assert osp.exists(ModelArgs.MOT_PATH), f"TensorRT model not found at {ModelArgs.MOT_PATH}"
         logger.info("Using TensorRT for ByteTrack inference")
-        model.head.decode_in_inference = False
 
-        decoder     = model.head.decode_outputs
-        predictor   = TORCH_MOT(model, exp, device, ModelArgs.MOT_PATH, decoder)
-        
+        predictor = TRT_MOT(model, exp, device, ModelArgs.MOT_PATH)
+
         tracker_args = argparse.Namespace(
             track_thresh=TrackArgs.TRACK_THRESH,
             track_buffer=TrackArgs.TRACK_BUFFER,
@@ -395,7 +393,7 @@ class TSVX:
                 depth = self.depth_trt_inference.infer(frame) # returns numpy array of the depth 
                 depth_map, depth_colored = self.DepthInstance.process_depth_map(depth, frame.shape, self.stream_1)
 
-                outputs, img_info = self.bytetrack_predictor.inference(frame, self.bytetrack_timer) 
+                outputs, img_info = self.bytetrack_predictor.infer(frame, self.bytetrack_timer) 
                 
                 self.tracked_count = 0
 

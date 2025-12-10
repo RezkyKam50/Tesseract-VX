@@ -21,7 +21,7 @@ def make_parser():
         "--output", default="output", type=str, help="output node name of onnx model"
     )
     parser.add_argument(
-        "-o", "--opset", default=11, type=int, help="onnx opset version"
+        "-o", "--opset", default=18, type=int, help="onnx opset version"
     )
     parser.add_argument("--no-onnxsim", action="store_true", help="use onnxsim or not")
     parser.add_argument(
@@ -81,18 +81,10 @@ def main():
         input_names=[args.input],
         output_names=[args.output],
         opset_version=args.opset,
+        do_constant_folding=True,
+        verbose=True # Add verbose output to see what's happening
     )
     logger.info("generated onnx model named {}".format(args.output_name))
-    
-    if not args.no_onnxsim:
-        import onnx
-        from onnxsim import simplify
-        # use onnxsimplify to reduce reduent model.
-        onnx_model = onnx.load(args.output_name)
-        model_simp, check = simplify(onnx_model)
-        assert check, "Simplified ONNX model could not be validated"
-        onnx.save(model_simp, args.output_name)
-        logger.info("generated simplified onnx model named {}".format(args.output_name))
 
 if __name__ == "__main__":
     main()

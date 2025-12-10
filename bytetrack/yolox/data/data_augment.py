@@ -10,7 +10,7 @@ http://arxiv.org/abs/1512.02325
 """
 
 import cv2
-import numpy as np
+import numpy as np, cupy as cp
 
 from yolox.utils import xyxy2cxcywh
 
@@ -246,31 +246,76 @@ def _mirror(image, boxes):
     return image, boxes
 
 
+# def preproc(image, input_size, mean, std, swap=(2, 0, 1)):
+
+#     img, r, padded_img = find_r(input_size, image)
+
+#     gpu_img = cv2.cuda_GpuMat()
+#     gpu_img.upload(img)
+    
+#     new_width = int(img.shape[1] * r)
+#     new_height = int(img.shape[0] * r)
+    
+#     # Resize on GPU
+#     gpu_resized = cv2.cuda.resize(gpu_img, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+#     resized_img = gpu_resized.download()
+    
+#     padded_img[: int(img.shape[0] * r), : int(img.shape[1] * r)] = resized_img
+#     padded_img = padded_img[:, :, ::-1]
+#     padded_img /= 255.0
+#     if mean is not None:
+#         padded_img -= mean
+#     if std is not None:
+#         padded_img /= std
+#     padded_img = padded_img.transpose(swap)
+#     padded_img = np.ascontiguousarray(padded_img, dtype=np.float32)
+ 
+#     return padded_img, r
+
+
 def preproc(image, input_size, mean, std, swap=(2, 0, 1)):
 
-    img, r, padded_img = find_r(input_size, image)
+    if len(image.shape) == 3:
+        padded_img = cp.ones((input_size[0], input_size[1], 3)) * 114.0
+    else:
+        padded_img = cp.ones(input_size) * 114.0
 
-    gpu_img = cv2.cuda_GpuMat()
-    gpu_img.upload(img)
-    
-    new_width = int(img.shape[1] * r)
-    new_height = int(img.shape[0] * r)
-    
-    # Resize on GPU
-    gpu_resized = cv2.cuda.resize(gpu_img, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
-    resized_img = gpu_resized.download()
-    
-    padded_img[: int(img.shape[0] * r), : int(img.shape[1] * r)] = resized_img
-    padded_img = padded_img[:, :, ::-1]
-    padded_img /= 255.0
+    img = cp.array(image)
+    r = min(input_size[0] / img.shape[0], input_size[1] / img.shape[1])
+
+    target_height = int(img.shape[0] * r)
+    target_width = int(img.shape[1] * r)
+
+    if target_height <= 0 or target_width <= 0:
+        raise ValueError(f"Invalid target size: ({target_width}, {target_height})")
+
+    resized_img = cp.array(cv2.resize(
+        cp.asnumpy(img),
+        (target_width, target_height),
+        interpolation=cv2.INTER_LINEAR,
+    ).astype(np.float32))
+
+    if len(image.shape) == 3:
+        padded_img[:target_height, :target_width, :] = resized_img
+    else:
+        padded_img[:target_height, :target_width] = resized_img
+
+    padded_img = padded_img[:, :, ::-1] / 255.0  # BGR to RGB and normalize
+
     if mean is not None:
-        padded_img -= mean
+        mean_array = cp.array(mean).reshape(1, 1, 3)
+        padded_img -= mean_array
+
     if std is not None:
-        padded_img /= std
+        std_array = cp.array(std).reshape(1, 1, 3)
+        padded_img /= std_array
+
     padded_img = padded_img.transpose(swap)
-    padded_img = np.ascontiguousarray(padded_img, dtype=np.float32)
- 
+    padded_img = cp.ascontiguousarray(padded_img, dtype=cp.float32)
+    
     return padded_img, r
+
+
 
 def find_r(input_size, image):
     if len(image.shape) == 3:

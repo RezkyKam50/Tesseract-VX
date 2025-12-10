@@ -5,4 +5,4 @@ export PYTHONPATH="${PYTHONPATH}:$(pwd)/bytetrack"
 source .venv/bin/activate
 source ./scripts/setup/srclib.sh
  
-python src/tsvx.py --source ./footage/demo_footage.mp4 --save-video --output ./footage/output.mp4 --parallel --optimize --gpu
+python src/tsvx.py --source ./footage/demo_footage.mp4 --save-video --output ./footage/output.mp4 --parallel --optimize --gpu  

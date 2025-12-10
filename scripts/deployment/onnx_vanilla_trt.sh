@@ -1,0 +1,1 @@
+python3 tools/onnx_vanilla_tensorrt.py --trt-path ./trt_models/bytetrack/bytetrack_l.engine --onnx-path ./onnx_models/bytetrack_l.onnx 

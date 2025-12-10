@@ -1,5 +1,7 @@
 __pycache__
+.garbage/
 .vscode
+testing
 assets
 onnx_models/
 trt_models/

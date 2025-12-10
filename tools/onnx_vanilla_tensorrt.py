@@ -22,9 +22,9 @@ def export_trt(trt_path: str, onnx_path: str, use_fp16: bool):
     s = time.time()
     ret = engine.build(
         onnx_path,
-        use_fp16,
-        enable_all_tactics=True,
-        enable_preview=True,
+        use_fp16
+        # enable_all_tactics=True,
+        # enable_preview=True,
     )
     e = time.time()
     print(f"Time taken to build: {(e-s)} seconds")

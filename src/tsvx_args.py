@@ -7,8 +7,8 @@ class AppArgs:
 
 class ModelArgs:
     # ByteTrack Model
-    EXP_FILE = "./bytetrack/exp/yolox_s_mix_det.py"
-    MOT_PATH = "./trt_models/bytetrack/bytetrack_s.pth"
+    EXP_FILE = "./bytetrack/exp/yolox_l_mix_det.py"
+    MOT_PATH = "./trt_models/bytetrack/bytetrack_l.engine"
     # MDE Model
     MDE_PATH = './trt_models/DAV2/depth_anything_v2_vitl.engine'
 

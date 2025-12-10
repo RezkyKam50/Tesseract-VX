@@ -45,7 +45,7 @@ def main(args):
         [x],
         fp16_mode=FP16_MODE, 
         log_level=trt.Logger.INFO,
-        max_workspace_size=(1 << 32),
+        max_workspace_size=(1 << 32)
     )
 
     trt_pth = os.path.join(file_name, f"{MODEL_NAME}.pth")
