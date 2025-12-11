@@ -284,16 +284,25 @@ class TrackerProcess:
             vertical = self.count_vertical(tlwh)
 
             if tlwh[2] * tlwh[3] > TrackArgs.MIN_BOX_AREA and not vertical:
-                tracked_count += 1
-                x, y, w, h = self.count_dim(tlwh)
-                color = FontConfig.THEMECOLORS[tid % len(FontConfig.THEMECOLORS)]
-                self.draw_transparent_highlight(frame, x, y, w, h, color)
-                self.draw_transparent_highlight(depth_colored, x, y, w, h, color)
 
                 avg_depth = self.get_depth_at_box(depth_map, tlwh)
 
-                self.render_text_overlay(avg_depth, tid, x, y, frame, depth_colored, color)
-                
+                if avg_depth > TrackArgs.PROXIMITY_THRESH:
+                    tracked_count += 1
+                    x, y, w, h = self.count_dim(tlwh)
+                    color = FontConfig.PROXIMITY_COLOR[0]   
+                    self.draw_transparent_highlight(frame, x, y, w, h, color)
+                    self.draw_transparent_highlight(depth_colored, x, y, w, h, color)
+                    self.render_text_overlay(avg_depth, tid, x, y, frame, depth_colored, color)
+                else:
+                    tracked_count += 1
+                    x, y, w, h = self.count_dim(tlwh)
+                    color = FontConfig.THEMECOLORS[tid % len(FontConfig.THEMECOLORS)]
+                    self.draw_transparent_highlight(frame, x, y, w, h, color)
+                    self.draw_transparent_highlight(depth_colored, x, y, w, h, color)
+
+                    self.render_text_overlay(avg_depth, tid, x, y, frame, depth_colored, color)
+
         return tracked_count
     
     def render_text_overlay(self, avg_depth, tid, x, y, frame, depth_colored, color):

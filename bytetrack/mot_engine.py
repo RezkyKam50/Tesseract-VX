@@ -137,7 +137,9 @@ class TRT_MOT:
             owner=None
         )
         output_ptr = cp.cuda.MemoryPointer(output_mem, 0)
-        output_shape = self.context.get_tensor_shape(self.outputs[output_idx]['name'])
+        output_shape = self.context.get_tensor_shape(
+            self.outputs[output_idx]['name']
+        )
         output_cp = cp.ndarray(
             output_shape,
             dtype=self.outputs[output_idx]['dtype'],

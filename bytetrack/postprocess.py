@@ -94,37 +94,7 @@ def get_pred_corner(prediction: torch.tensor, block: tuple):
 # detections = torch.cat((image_pred[:, :5], class_conf, class_pred.float()), 1)
 # detections = detections[conf_mask]
 
-detection_kernel = cp.RawKernel(r'''
-__global__ void build_detections_kernel(
-    const float* image_pred, 
-    float* class_confs,
-    int* class_idxs,
-    int num_boxes, 
-    int num_classes
-) {
-    int box_idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (box_idx >= num_boxes) return;
-    
-    int base_idx = box_idx * (5 + num_classes);
-     
-    float max_conf = -INFINITY;
-    int max_idx = 0;
-    
-    #pragma unroll 4                            
-    for (int c = 0; c < num_classes; c++) {
-        float conf = image_pred[base_idx + 5 + c];
-        if (conf > max_conf) {
-            max_conf = conf;
-            max_idx = c;
-        }
-    }
-     
-    class_confs[box_idx] = max_conf;
-    class_idxs[box_idx] = max_idx;
-}
-''', 'build_detections_kernel')
-
-
+ 
 def build_detections(image_pred, num_classes, conf_thre):     
     class_conf, class_pred = torch.max(image_pred[:, 5:5+num_classes], 1)
      
@@ -161,8 +131,6 @@ def postproc(prediction: torch.tensor, num_classes: int, conf_thre: float, nms_t
 
         if not detections.size(0):
             continue
- 
-        torch.cuda.synchronize() 
 
         nms_out_index = torchvision.ops.batched_nms(
             detections[:, :4],

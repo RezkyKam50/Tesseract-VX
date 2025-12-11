@@ -7,17 +7,17 @@ class AppArgs:
 
 class ModelArgs:
     # ByteTrack Model
-    EXP_FILE = "./bytetrack/exp/yolox_s_mix_det.py"
-    MOT_PATH = "./trt_models/bytetrack/bytetrack_s.engine"
+    EXP_FILE = "./bytetrack/exp/yolox_l_mix_det.py"
+    MOT_PATH = "./trt_models/bytetrack/bytetrack_l.engine"
     # MDE Model
-    MDE_PATH = './trt_models/DAV2/depth_anything_v2_vits.engine'
+    MDE_PATH = './trt_models/DAV2/depth_anything_v2_vitl.engine'
 
 class TrackArgs:
 
     # Functional
     TRACK_THRESH = 0.5
     TRACK_BUFFER = 10
-    PROXIMITY_THRESH = 1
+    PROXIMITY_THRESH = 320
     MATCH_THRESH = 0.9
     ASPECT_RATIO_THRESH = 1.6
     MIN_BOX_AREA = 10
@@ -52,6 +52,9 @@ class FontConfig:
         # (0, 255, 255),    # Yellow
         # (128, 255, 0),    # Light Green
         # (255, 128, 0),    # Orange
+    ]
+    PROXIMITY_COLOR = [
+        (0, 0, 255)      # Red 
     ]
 
 def parse_args():
