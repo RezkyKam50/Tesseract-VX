@@ -1,5 +1,4 @@
 import cupy as cp
-import nvtx
 
 fused_resize_bgr2rgb_kernel = cp.RawKernel(r'''
 extern "C" __global__
@@ -11,24 +10,24 @@ void fused_resize_bgr2rgb_3c(
 ){
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
-    int channel = blockIdx.z * blockDim.z + threadIdx.z;
+    int c = blockIdx.z * blockDim.z + threadIdx.z;
     
-    if (x >= out_w || y >= out_h || channel >= 3 || 
+    if (x >= out_w || y >= out_h || c >= 3 || 
         out_w <= 0 || out_h <= 0 || in_w <= 0 || in_h <= 0) return;
     
     // Map BGR to RGB: channel 0 (B in src) -> channel 2 (R in dst)
     //                channel 1 (G in src) -> channel 1 (G in dst)
     //                channel 2 (R in src) -> channel 0 (B in dst)
-    int src_channel, dst_channel;
-    if (channel == 0) {
-        src_channel = 2;  // R in source
-        dst_channel = 0;  // B in destination
-    } else if (channel == 1) {
-        src_channel = 1;  // G in source
-        dst_channel = 1;  // G in destination
-    } else { // channel == 2
-        src_channel = 0;  // B in source
-        dst_channel = 2;  // R in destination
+    int src_c, dst_c;
+    if (c == 0) {
+        src_c = 2;  // R in source
+        dst_c = 0;  // B in destination
+    } else if (c == 1) {
+        src_c = 1;  // G in source
+        dst_c = 1;  // G in destination
+    } else { // c == 2
+        src_c = 0;  // B in source
+        dst_c = 2;  // R in destination
     }
     
     const float scale_x = __fdividef((float)in_w, (float)out_w);  
@@ -50,11 +49,11 @@ void fused_resize_bgr2rgb_3c(
     float dx1 = 1.0f - dx;
     float dy1 = 1.0f - dy;
      
-    int idx00 = (y0 * in_w + x0) * 3 + src_channel;
-    int idx01 = (y0 * in_w + x1) * 3 + src_channel;
-    int idx10 = (y1 * in_w + x0) * 3 + src_channel;
-    int idx11 = (y1 * in_w + x1) * 3 + src_channel;
-    int dst_idx = (y * out_w + x) * 3 + dst_channel;
+    int idx00 = (y0 * in_w + x0) * 3 + src_c;
+    int idx01 = (y0 * in_w + x1) * 3 + src_c;
+    int idx10 = (y1 * in_w + x0) * 3 + src_c;
+    int idx11 = (y1 * in_w + x1) * 3 + src_c;
+    int dst_idx = (y * out_w + x) * 3 + dst_c;
        
     float v00 = src[idx00];
     float v01 = src[idx01];
@@ -98,18 +97,18 @@ void fused_preprocess_kernel(
     float* __restrict__ padded_img_chw,      
     const float* __restrict__ mean,
     const float* __restrict__ std,
-    const int target_height,
-    const int target_width,
-    const int padded_height,
-    const int padded_width,
-    const int channels
+    const int target_h,
+    const int target_w,
+    const int padded_h,
+    const int padded_w,
+    const int c
 ) {
  
     int x = blockIdx.x * blockDim.x + threadIdx.x;     
     int y = blockIdx.y * blockDim.y + threadIdx.y;    
-    int c = blockIdx.z * blockDim.z + threadIdx.z;     
+    int ch = blockIdx.z * blockDim.z + threadIdx.z;     
      
-    if (x >= padded_width || y >= padded_height || c >= channels) return;
+    if (x >= padded_w || y >= padded_h || ch >= c) return;
     
     const float inv_255 = 0.003921568627f;
      
@@ -119,26 +118,26 @@ void fused_preprocess_kernel(
         inv_std[i] = __frcp_rn(std[i]);
     }
      
-    int hw = padded_height * padded_width;
-    int chw_idx = c * hw + y * padded_width + x;
+    int hw = padded_h * padded_w;
+    int chw_idx = ch * hw + y * padded_w + x;
      
-    if (y < target_height && x < target_width) {
+    if (y < target_h && x < target_w) {
                                            
-        int in_base = (y * target_width + x) * channels;
+        int in_base = (y * target_w + x) * c;
          
         float pixel_val;
-        if (c == 0) {  // R channel from B input
+        if (ch == 0) {  // R channel from B input
             pixel_val = __ldg(&resized_img[in_base + 2]);
-        } else if (c == 1) {  // G channel from G input
+        } else if (ch == 1) {  // G channel from G input
             pixel_val = __ldg(&resized_img[in_base + 1]);
-        } else {  // c == 2, B channel from R input
+        } else {  // ch == 2, B channel from R input
             pixel_val = __ldg(&resized_img[in_base + 0]);
         }
          
         int mean_idx;
-        if (c == 0) {  // R channel uses mean[2]
+        if (ch == 0) {  // R channel uses mean[2]
             mean_idx = 2;
-        } else if (c == 1) {  // G channel uses mean[1]
+        } else if (ch == 1) {  // G channel uses mean[1]
             mean_idx = 1;
         } else {  // B channel uses mean[0]
             mean_idx = 0;
@@ -147,7 +146,7 @@ void fused_preprocess_kernel(
         padded_img_chw[chw_idx] = __fmaf_rn(pixel_val, inv_255, -mean[mean_idx]) * inv_std[mean_idx];
     } else {
  
-        float padding_val = __fmaf_rn(114.0f, inv_255, -mean[c]) * inv_std[c];
+        float padding_val = __fmaf_rn(114.0f, inv_255, -mean[ch]) * inv_std[ch];
         padded_img_chw[chw_idx] = padding_val;
     }
 }
@@ -155,27 +154,27 @@ void fused_preprocess_kernel(
 
 def cust_mot_fused_preproc_hwcT(
     resized_img,            
-    target_height,          
-    target_width,         
-    padded_height,        
-    padded_width,          
+    target_h,          
+    target_w,         
+    padded_h,        
+    padded_w,          
     mean,                  
     std,                   
     block_size,            
 ):
-    _, _, channels = resized_img.shape
+    _, _, c = resized_img.shape
     
-    assert channels == 3, "Only 3-channel images supported"
+    assert c == 3, "Only 3-channel images supported"
     
     if not isinstance(resized_img, cp.ndarray):
         resized_img = cp.array(resized_img, dtype=cp.float32)
      
-    padded_img_chw = cp.empty((channels, padded_height, padded_width), dtype=cp.float32)
+    padded_img_chw = cp.empty((c, padded_h, padded_w), dtype=cp.float32)
      
     grid = (
-        (padded_width + block_size[0] - 1) // block_size[0],
-        (padded_height + block_size[1] - 1) // block_size[1],
-        (channels + block_size[2] - 1) // block_size[2] 
+        (padded_w + block_size[0] - 1) // block_size[0],
+        (padded_h + block_size[1] - 1) // block_size[1],
+        (c + block_size[2] - 1) // block_size[2] 
     )
     
     mean_cp = cp.array(mean, dtype=cp.float32)
@@ -189,18 +188,18 @@ def cust_mot_fused_preproc_hwcT(
             padded_img_chw,        
             mean_cp,                
             std_cp,               
-            target_height,         
-            target_width,           
-            padded_height,         
-            padded_width,          
-            channels                
+            target_h,         
+            target_w,           
+            padded_h,         
+            padded_w,          
+            c                
         )
     )
     
     return padded_img_chw
 
 
-# padded_img[:target_height, :target_width, :] = resized_img
+# padded_img[:target_h, :target_w, :] = resized_img
 # padded_img = padded_img[:, :, ::-1] / 255.0  
 # mean_array = cp.array(self.mean).reshape(1, 1, 3)
 # padded_img -= mean_array
@@ -219,16 +218,16 @@ void fused_resize_preprocess_transpose(
     int in_h, int in_w,
     int target_h, int target_w,
     int padded_h, int padded_w,
-    int channels
+    int c
 ){
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
-    int c = blockIdx.z * blockDim.z + threadIdx.z;
+    int ch = blockIdx.z * blockDim.z + threadIdx.z;
     
-    if (x >= padded_w || y >= padded_h || c >= 3) return;
+    if (x >= padded_w || y >= padded_h || ch >= 3) return;
     
     const float inv_255 = 0.003921568627f;
-    const float inv_std_c = __frcp_rn(std[c]);
+    const float inv_std_c = __frcp_rn(std[ch]);
     
     const int hw = padded_h * padded_w;
     const int hw_idx = y * padded_w + x;
@@ -253,29 +252,29 @@ void fused_resize_preprocess_transpose(
         
         const float dx = src_x - x0;
         const float dy = src_y - y0;
-        const float one_minus_dx = 1.0f - dx;
-        const float one_minus_dy = 1.0f - dy;
+        const float dx1 = 1.0f - dx;
+        const float dy1 = 1.0f - dy;
         
-        const int src_idx_y0 = y0 * in_w * channels;
-        const int src_idx_y1 = y1 * in_w * channels;
-        const int src_idx_x0 = x0 * channels;
-        const int src_idx_x1 = x1 * channels;
+        const int src_idx_y0 = y0 * in_w * c;
+        const int src_idx_y1 = y1 * in_w * c;
+        const int src_idx_x0 = x0 * c;
+        const int src_idx_x1 = x1 * c;
          
-        const float v00 = src[src_idx_y0 + src_idx_x0 + c];
-        const float v01 = src[src_idx_y0 + src_idx_x1 + c];
-        const float v10 = src[src_idx_y1 + src_idx_x0 + c];
-        const float v11 = src[src_idx_y1 + src_idx_x1 + c];
+        const float v00 = src[src_idx_y0 + src_idx_x0 + ch];
+        const float v01 = src[src_idx_y0 + src_idx_x1 + ch];
+        const float v10 = src[src_idx_y1 + src_idx_x0 + ch];
+        const float v11 = src[src_idx_y1 + src_idx_x1 + ch];
         
-        const float top = __fmaf_rn(v01, dx, __fmaf_rn(v00, one_minus_dx, 0.0f));
-        const float bottom = __fmaf_rn(v11, dx, __fmaf_rn(v10, one_minus_dx, 0.0f));
-        float resized_val = __fmaf_rn(bottom, dy, __fmaf_rn(top, one_minus_dy, 0.0f));
+        const float top = __fmaf_rn(v01, dx, __fmaf_rn(v00, dx1, 0.0f));
+        const float bottom = __fmaf_rn(v11, dx, __fmaf_rn(v10, dx1, 0.0f));
+        float resized_val = __fmaf_rn(bottom, dy, __fmaf_rn(top, dy1, 0.0f));
          
-        normalized = __fmaf_rn(resized_val, inv_255, -mean[c]) * inv_std_c;
+        normalized = __fmaf_rn(resized_val, inv_255, -mean[ch]) * inv_std_c;
     } else {
-        normalized = __fmaf_rn(114.0f, inv_255, -mean[c]) * inv_std_c;
+        normalized = __fmaf_rn(114.0f, inv_255, -mean[ch]) * inv_std_c;
     }
      
-    int dst_c = 2 - c;  // 0->2, 1->1, 2->0
+    int dst_c = 2 - ch;  // 0->2, 1->1, 2->0
      
     int chw_idx = dst_c * hw + hw_idx;
     dst_chw[chw_idx] = normalized;
@@ -339,19 +338,19 @@ void preprocess_fused_kernel(
     float* __restrict__ output,
     const float* __restrict__ mean,
     const float* __restrict__ std,
-    const int H,
-    const int W,
-    const int C
+    const int h,
+    const int w,
+    const int c
 ) {
-    int w = blockIdx.x * blockDim.x + threadIdx.x;
-    int h = blockIdx.y * blockDim.y + threadIdx.y;
-    int c = blockIdx.z * blockDim.z + threadIdx.z;
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    int ch = blockIdx.z * blockDim.z + threadIdx.z;
 
-    if (w >= W || h >= H || c >= C)
+    if (x >= w || y >= h || ch >= c)
         return;
 
-    int input_idx = (h * W + w) * C + c;
-    int output_idx = (c * H + h) * W + w;
+    int input_idx = (y * w + x) * c + ch;
+    int output_idx = (ch * h + y) * w + x;
 
     float px = input[input_idx];
 
@@ -359,11 +358,11 @@ void preprocess_fused_kernel(
     float normalized = px * (1.0f / 255.0f);
 
     // Use fdividef + fmaf so the compiler stops pretending it's too busy
-    float invstd = fdividef(1.0f, std[c]);
+    float invstd = fdividef(1.0f, std[ch]);
 
-    // (normalized - mean[c]) / std[c]
+    // (normalized - mean[ch]) / std[ch]
     // result = (normalized - mean)*invstd
-    float result = fmaf(normalized - mean[c], invstd, 0.0f);
+    float result = fmaf(normalized - mean[ch], invstd, 0.0f);
 
     output[output_idx] = result;
 }
@@ -372,21 +371,19 @@ void preprocess_fused_kernel(
 
 
 def cust_mde_nhwc_nchw(img_cp, mean, std, block_size):
-    H, W, C = img_cp.shape
+    h, w, c = img_cp.shape
 
     img_cp = img_cp.astype(cp.float32)
-    out = cp.empty((1, C, H, W), dtype=cp.float32)
+    out = cp.empty((1, c, h, w), dtype=cp.float32)
 
-    grid_x = (W + block_size[0] - 1) // block_size[0]
-    grid_y = (H + block_size[1] - 1) // block_size[1]
-    grid_z = (C + block_size[2] - 1) // block_size[2]
+    grid_x = (w + block_size[0] - 1) // block_size[0]
+    grid_y = (h + block_size[1] - 1) // block_size[1]
+    grid_z = (c + block_size[2] - 1) // block_size[2]
 
     _cust_fused_nhwc_nchw(
         (grid_x, grid_y, grid_z),
         block_size,
-        (img_cp, out[0], mean, std, H, W, C)
+        (img_cp, out[0], mean, std, h, w, c)
     )
 
     return out
-
-
