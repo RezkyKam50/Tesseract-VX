@@ -6,7 +6,7 @@ def _depth_alpha_beta(min_val, max_val):
     return alpha, beta
 
 def _count_dim(tlwh):
-    return np.array([int(tlwh[0]), int(tlwh[1]), int(tlwh[2]), int(tlwh[3])], dtype=np.int32)
+    return np.array([int(tlwh[0]), int(tlwh[1]), int(tlwh[2]), int(tlwh[3])], dtype=np.int16)
 
 def _get_depth_at_box(depth_map, x, y, w, h):
  

@@ -17,8 +17,6 @@ from bytetrack.yolox.tracking_utils.timer import Timer
 from bytetrack.mot_engine import TRT_MOT
 from mde.mde_engine       import TRT_MDE
 
-
-
 import pycuda.driver as cuda
 import pycuda.autoinit
 
