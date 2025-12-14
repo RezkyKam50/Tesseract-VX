@@ -1,9 +1,12 @@
-> (THRESH = avg_depth > 320 ) Crowd distance
-![Demo GIF](demo/demo.gif)
+## Crowd Distance Monitoring
+**Threshold:** `avg_depth > 320`
 
+![Crowd Distance Demo](demo/demo.gif)
 
-> (THRESH = avg_depth > 250 ) Autonomous drive
-![Demo GIF2](demo/demo2.gif)
+## Autonomous Driving
+**Threshold:** `avg_depth > 250`
+
+![Autonomous Driving Demo](demo/demo2.gif)
 
 > Left: Object Track, Right: Depth Estimation
 
