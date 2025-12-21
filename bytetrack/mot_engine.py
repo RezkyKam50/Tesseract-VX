@@ -2,7 +2,7 @@
 import cupy as cp
 
 from cuda_kernels.fused_kernel import *
-from cuda_kernels.mono_kernel import *
+from cuda_kernels.single_kernel import *
 
 import pycuda.driver as cuda
 import pycuda.autoinit
@@ -12,6 +12,9 @@ import torch
 from postprocess import postproc
 
 from nvtx import push_range, pop_range
+
+from cupy.cuda import Device
+Device(0).use()  # this avoids conflict with PyCUDA context
 
 class TRT_MOT:
     def __init__(self, model, exp, device, trt_file):
@@ -78,56 +81,124 @@ class TRT_MOT:
                 })
                 self.output_bindings.append(int(device_mem))
 
-    def preproc(self, image, input_size: tuple, fused):
+        self.cupy_stream = cp.cuda.ExternalStream(self.stream_ptr)  # operate CuPy with PyCUDA stream
+        
+        # Graph objects
+        self.preprocess_fused_graph = None
+        self.preprocess_unfused_graph = None
+        
+        # Persistent buffers for preprocessing
+        self.preproc_input_buffer = None
+        self.preproc_padded_buffer = None
+        self.preproc_resized_buffer = None
+        self.preproc_output_buffer = None
+        self.last_input_shape = None
+        self.last_target_height = None
+        self.last_target_width = None
 
-        padded_img = cp.ones((input_size[0], input_size[1], 3)) * 114.0
+    def preproc(self, image, input_size: tuple, fused):
+        push_range("Preprocess")
 
         padded_height, padded_width = input_size
 
-        img = cp.array(image)
+        if isinstance(image, cp.ndarray):
+            img = image
+        else:
+            img = cp.array(image)
+            
         r = min(input_size[0] / img.shape[0], input_size[1] / img.shape[1])
 
         target_height = int(img.shape[0] * r)
         target_width = int(img.shape[1] * r)
         
-        if fused:
-            padded_img = cust_mot_resize_preprocess_chwT(
-                img,
-                target_height,       
-                target_width,       
-                padded_height,   
-                padded_width,     
-                self.mean,
-                self.std,
-                self.gpu_block3c
-            )
-
-        else:
-            resized_img = cupy_resize_3c(
-                img, 
-                target_width, 
-                target_height, 
-                self.gpu_block3c
-            ) 
-
-            padded_img = cust_mot_preprocess(
-                resized_img,
-                target_height,
-                target_width,
-                padded_height,
-                padded_width,
-                self.mean,
-                self.std,
-                self.gpu_block3c
-            )
-
-            padded_img = cust_mot_transpose_hwc_to_chw(
-                padded_img,
-                self.gpu_block3c
-            )
-
+        with self.cupy_stream:
+            # Check if we need to reallocate buffers (shape change)
+            if (self.preproc_input_buffer is None or 
+                self.last_input_shape != img.shape or
+                self.last_target_height != target_height or
+                self.last_target_width != target_width):
+                
+                self.last_input_shape = img.shape
+                self.last_target_height = target_height
+                self.last_target_width = target_width
+                
+                self.preproc_input_buffer = cp.empty_like(img)
+                
+                if fused:
+                    self.preproc_output_buffer = cp.empty(
+                        (3, padded_height, padded_width), 
+                        dtype=cp.float32
+                    )
+                else:
+                    self.preproc_resized_buffer = cp.empty(
+                        (target_height, target_width, 3), 
+                        dtype=cp.float32
+                    )
+                    self.preproc_padded_buffer = cp.empty(
+                        (padded_height, padded_width, 3), 
+                        dtype=cp.float32
+                    )
+                    self.preproc_output_buffer = cp.empty(
+                        (3, padded_height, padded_width), 
+                        dtype=cp.float32
+                    )
+                
+                # Reset graphs when dimensions change
+                self.preprocess_fused_graph = None
+                self.preprocess_unfused_graph = None
+            
+            cp.copyto(self.preproc_input_buffer, img)
+            
+            if fused:
+                if self.preprocess_fused_graph is None:
+                    # print("Capturing fused preprocess graph...")
+                    self.cupy_stream.begin_capture()
+                    self.preproc_output_buffer = cust_mot_resize_preprocess_chwT(
+                        self.preproc_input_buffer,
+                        target_height,       
+                        target_width,       
+                        padded_height,   
+                        padded_width,     
+                        self.mean,
+                        self.std,
+                        self.gpu_block3c
+                    )
+                    self.preprocess_fused_graph = self.cupy_stream.end_capture()
+                else:
+                    # print("Replaying fused preprocess graph...")
+                    self.preprocess_fused_graph.launch(self.cupy_stream)
+            else:
+                if self.preprocess_unfused_graph is None:
+                    # print("Capturing unfused preprocess graph...")
+                    self.cupy_stream.begin_capture()
+                    self.preproc_resized_buffer = cupy_resize_3c(
+                        self.preproc_input_buffer, 
+                        target_width, 
+                        target_height, 
+                        self.gpu_block3c
+                    )
+                    self.preproc_padded_buffer = cust_mot_preprocess(
+                        self.preproc_resized_buffer,
+                        target_height,
+                        target_width,
+                        padded_height,
+                        padded_width,
+                        self.mean,
+                        self.std,
+                        self.gpu_block3c
+                    )
+                    self.preproc_output_buffer = cust_mot_transpose_hwc_to_chw(
+                        self.preproc_padded_buffer,
+                        self.gpu_block3c
+                    )
+                    self.preprocess_unfused_graph = self.cupy_stream.end_capture()
+                else:
+                    # print("Replaying unfused preprocess graph...")
+                    self.preprocess_unfused_graph.launch(self.cupy_stream)
         
-        return padded_img, r
+        pop_range()
+        self.cp_wait()
+        return self.preproc_output_buffer, r
 
     def _trt2cp(self, output_idx=0):
         push_range("TRT to CuPy Wrapper")
@@ -149,7 +220,7 @@ class TRT_MOT:
         return output_cp
     
     def cp_wait(self):
-        cp.cuda.get_current_stream().synchronize()
+        self.cupy_stream.synchronize()
     
     def infer(self, img, timer):
 
@@ -160,7 +231,7 @@ class TRT_MOT:
         img_info["raw_img"] = img
           
         # preproc  
-        img, ratio = self.preproc(img, self.test_size,  fused=False)
+        img, ratio = self.preproc(img, self.test_size, fused=False)
 
         img_info["ratio"] = ratio
              
@@ -170,11 +241,11 @@ class TRT_MOT:
          
         img_flat = cp.ascontiguousarray(img_cp).ravel()
             
-        self.context.set_tensor_address(self.inputs[0]['name'], img_flat.data.ptr)
-            
+        # set input output bindings
+        self.context.set_tensor_address(self.inputs[0]['name'], img_flat.data.ptr) 
         for i, out in enumerate(self.outputs):
             self.context.set_tensor_address(out['name'], self.output_bindings[i])
-            
+        # inference
         self.context.execute_async_v3(stream_handle=self.stream_ptr)
              
         outputs_cp = self._trt2cp(output_idx=0)

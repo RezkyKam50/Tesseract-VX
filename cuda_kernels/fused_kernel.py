@@ -1,8 +1,15 @@
 import cupy as cp
+from cuda_kernels.compiler_opt import options, backend
+
+# -> adding "cutlass" to function name triggers several optimization 
+# Refs:
+# https://maknee.github.io/blog/2025/Maybe-Consider-Putting-Cutlass-In-Your-CUDA-Kernels/
+# https://news.ycombinator.com/item?id=45458948
+# the trick is mainly for fp8 computation but we'll try it here
 
 fused_resize_bgr2rgb_kernel = cp.RawKernel(r'''
 extern "C" __global__
-void fused_resize_bgr2rgb_3c(
+void cutlass_fused_resize_bgr2rgb_3c(
     const float* __restrict__ src,
     float* __restrict__ dst,
     int in_h, int in_w,
@@ -64,7 +71,7 @@ void fused_resize_bgr2rgb_3c(
     float bottom = __fmaf_rn(v10, dx1, v11 * dx);
     dst[dst_idx] = __fmaf_rn(top, dy1, bottom * dy);
 }
-''', 'fused_resize_bgr2rgb_3c')
+''', 'cutlass_fused_resize_bgr2rgb_3c', options=options, backend=backend)
 
 def fused_resize_bgr2rgb_3c(img_cp, out_h, out_w, block_size):
 
@@ -91,7 +98,7 @@ def fused_resize_bgr2rgb_3c(img_cp, out_h, out_w, block_size):
 
 _cust_fused_preprocess_chwT = cp.RawKernel(r'''
 extern "C" __global__
-void fused_preprocess_kernel(
+void cutlass_fused_preprocess_kernel(
     const float* __restrict__ resized_img,   
     float* __restrict__ padded_img_chw,      
     const float* __restrict__ mean,
@@ -149,7 +156,7 @@ void fused_preprocess_kernel(
         padded_img_chw[chw_idx] = padding_val;
     }
 }
-''', 'fused_preprocess_kernel')
+''', 'cutlass_fused_preprocess_kernel', options=options, backend=backend)
 
 def cust_mot_fused_preproc_hwcT(
     resized_img,            
@@ -209,7 +216,7 @@ def cust_mot_fused_preproc_hwcT(
 
 _cust_fused_resize_preprocess_chwT = cp.RawKernel(r'''
 extern "C" __global__
-void fused_resize_preprocess_transpose(
+void cutlass_fused_resize_preprocess_transpose(
     const float* __restrict__ src,
     float* __restrict__ dst_chw,
     const float* __restrict__ mean,
@@ -278,7 +285,7 @@ void fused_resize_preprocess_transpose(
     int chw_idx = dst_c * hw + hw_idx;
     dst_chw[chw_idx] = normalized;
 }
-''', 'fused_resize_preprocess_transpose')
+''', 'cutlass_fused_resize_preprocess_transpose', options=options, backend=backend)
 
 
 def cust_mot_resize_preprocess_chwT(
@@ -332,7 +339,7 @@ def cust_mot_resize_preprocess_chwT(
 
 _cust_fused_nhwc_nchw = cp.RawKernel(r'''
 extern "C" __global__
-void preprocess_fused_kernel(
+void cutlass_preprocess_fused_kernel(
     const float* __restrict__ input,
     float* __restrict__ output,
     const float* __restrict__ mean,
@@ -365,8 +372,7 @@ void preprocess_fused_kernel(
 
     output[output_idx] = result;
 }
-''', 'preprocess_fused_kernel')
-
+''', 'cutlass_preprocess_fused_kernel', options=options, backend=backend)
 
 
 def cust_mde_nhwc_nchw(img_cp, mean, std, block_size):

@@ -16,6 +16,6 @@ nsys profile \
     --nvtx-capture=all \
     --stop-on-exit=true \
     --kill=sigkill \
-    python3 ./profiling/test.py
+    ./tsvx.sh
 
 nsys-ui ./profiling/*.nsys-rep

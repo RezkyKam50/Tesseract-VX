@@ -1,9 +1,16 @@
 import cupy as cp
 import nvtx
+from cuda_kernels.compiler_opt import options, backend
+
+# -> adding "cutlass" to function name triggers several optimization 
+# Refs:
+# https://maknee.github.io/blog/2025/Maybe-Consider-Putting-Cutlass-In-Your-CUDA-Kernels/
+# https://news.ycombinator.com/item?id=45458948
+# the trick is mainly for fp8 computation but we'll try it here
 
 bilinear_kernel_2c = cp.RawKernel(r'''
 extern "C" __global__
-void resize_bilinear(
+void cutlass_resize_bilinear(
     const float* __restrict__ src,
     float* __restrict__ dst,
     int in_h, int in_w,
@@ -42,7 +49,7 @@ void resize_bilinear(
     dst[y * out_w + x] = __fmaf_rn(bottom, dy, __fmaf_rn(top, dy1, 0.0f));
      
 }
-''', 'resize_bilinear')
+''', 'cutlass_resize_bilinear', options=options, backend=backend)
 
 def cupy_resize_2c(depth_cp, out_h, out_w, block_size):
     
@@ -66,7 +73,7 @@ def cupy_resize_2c(depth_cp, out_h, out_w, block_size):
 
 bilinear_kernel_3c = cp.RawKernel(r'''
 extern "C" __global__
-void resize_bilinear_3c(
+void cutlass_resize_bilinear_3c(
     const float* __restrict__ src,
     float* __restrict__ dst,
     int in_h, int in_w,
@@ -115,7 +122,7 @@ void resize_bilinear_3c(
     const int dst_idx = (y * out_w + x) * c + ch;
     dst[dst_idx] = __fmaf_rn(bottom, dy, __fmaf_rn(top, dy1, 0.0f));
 }
-''', 'resize_bilinear_3c')
+''', 'cutlass_resize_bilinear_3c', options=options, backend=backend)
 
 def cupy_resize_3c(img_cp, out_w, out_h, block_size):
     h, w, c = img_cp.shape
@@ -148,7 +155,7 @@ def cupy_resize_3c(img_cp, out_w, out_h, block_size):
 
 bgr2rgb_float_kernel = cp.RawKernel(r'''
 extern "C" __global__
-void bgr2rgb_float(
+void cutlass_bgr2rgb_float(
     const float* __restrict__ src,
     float* __restrict__ dst,
     int h, int w
@@ -168,7 +175,7 @@ void bgr2rgb_float(
     
     dst[idx] = src[src_idx];
 }
-''', 'bgr2rgb_float')
+''', 'cutlass_bgr2rgb_float', options=options, backend=backend)
 
 def cupy_cvt_bgr2rgb_float(img_cp, block_size):
     h, w, c = img_cp.shape
@@ -192,7 +199,7 @@ def cupy_cvt_bgr2rgb_float(img_cp, block_size):
 
 _cust_preprocess_kernel = cp.RawKernel(r'''
 extern "C" __global__
-void preprocess_kernel(
+void cutlass_preprocess_kernel(
     const float* __restrict__ resized_img,
     float* __restrict__ padded_img,
     const float* __restrict__ mean,
@@ -232,7 +239,7 @@ void preprocess_kernel(
         padded_img[out_idx] = padding_val;
     }
 }
-''', 'preprocess_kernel')
+''', 'cutlass_preprocess_kernel', options=options, backend=backend)
 
 def cust_mot_preprocess(
     resized_img,          
@@ -283,7 +290,7 @@ def cust_mot_preprocess(
 
 _cust_transpose_kernel = cp.RawKernel(r'''
 extern "C" __global__
-void transpose_kernel(
+void cutlass_transpose_kernel(
     const float* padded_img_hwc,  
     float* padded_img_chw,         
     const int h,
@@ -301,13 +308,12 @@ void transpose_kernel(
     
     int hw = h * w;
     int hw_idx = y * w + x;
-    
-    // Direct assignment without loop
+     
     int hwc_idx = hw_idx * c + ch;
     int chw_idx = ch * hw + hw_idx;
     padded_img_chw[chw_idx] = padded_img_hwc[hwc_idx];
 }
-''', 'transpose_kernel')
+''', 'cutlass_transpose_kernel', options=options, backend=backend)
 
 
 def cust_mot_transpose_hwc_to_chw(
