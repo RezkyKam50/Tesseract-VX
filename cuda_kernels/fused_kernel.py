@@ -70,8 +70,7 @@ def fused_resize_bgr2rgb_3c(img_cp, out_h, out_w, block_size):
 
     h, w, c = img_cp.shape
 
-    if c != 3:
-        raise ValueError(f"Input image must have 3 channels (BGR), got {c} channels")
+    assert c == 3, "Only 3-channel images supported"
     
     img_f = img_cp.astype(cp.float32, copy=False)
     out = cp.empty((out_h, out_w, 3), dtype=cp.float32) 
@@ -372,6 +371,7 @@ void preprocess_fused_kernel(
 
 def cust_mde_nhwc_nchw(img_cp, mean, std, block_size):
     h, w, c = img_cp.shape
+    assert c == 3, "Only 3-channel images supported"
 
     img_cp = img_cp.astype(cp.float32)
     out = cp.empty((1, c, h, w), dtype=cp.float32)
