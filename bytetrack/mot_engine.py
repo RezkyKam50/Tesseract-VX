@@ -173,8 +173,9 @@ class TRT_MOT:
                     self.cupy_stream.begin_capture()
                     self.preproc_resized_buffer = cupy_resize_3c(
                         self.preproc_input_buffer, 
-                        target_width, 
                         target_height, 
+                        target_width, 
+                        cp.float32,
                         self.gpu_block3c
                     )
                     self.preproc_padded_buffer = cust_mot_preprocess(

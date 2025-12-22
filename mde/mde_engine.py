@@ -100,10 +100,11 @@ class TRT_MDE:
                 # print("Capturing resize graph...")
                 self.cupy_stream.begin_capture()
                 if fused:
-                    self.resize_output_buffer = fused_resize_bgr2rgb_3c(
+                    self.resize_output_buffer = fused_bgr2rgb_resize_3c(
                         self.resize_input_buffer, 
                         self.input_h, 
                         self.input_w, 
+                        cp.float32,
                         self.gpu_block3c
                     )
                 else:
@@ -111,10 +112,12 @@ class TRT_MDE:
                         self.resize_input_buffer, 
                         self.input_w, 
                         self.input_h, 
+                        cp.float32,
                         self.gpu_block3c
                     )
                     self.resize_output_buffer = cupy_cvt_bgr2rgb_float(
                         resized_cp, 
+                        cp.float32,
                         self.gpu_block3c
                     )
                 self.preprocess_graph = self.cupy_stream.end_capture()
@@ -214,6 +217,7 @@ class TRT_MDE:
                     self.postprocess_input_buffer, 
                     self.original_h, 
                     self.original_w, 
+                    cp.float32,
                     self.gpu_block2c
                 )
                 self.postprocess_graph = self.cupy_stream.end_capture()
