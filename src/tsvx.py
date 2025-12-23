@@ -38,7 +38,8 @@ class Initialize:
             cuda_device, 
             qt_platform,
             nv_prime,
-            glx_vendor
+            glx_vendor,
+            cp_tf32
         ):
 
         self.source      = source
@@ -48,6 +49,7 @@ class Initialize:
         os.environ["CUDA_VISIBLE_DEVICES"]      = f"{cuda_device}"
         os.environ["NV_PRIME_RENDER_OFFLOAD"]   = "1" if nv_prime else "0"
         os.environ["__GLX_VENDOR_LIBRARY_NAME"] = f"{glx_vendor}"
+        os.environ["CUPY_TF32"] = f"{cp_tf32}"
          
         self.cap = None
         self.source_type = None
@@ -474,7 +476,8 @@ if __name__ == "__main__":
         cuda_device = AppArgs.CUDA_DEVICE,
         qt_platform = AppArgs.QT_PLATFORM,
         nv_prime    = AppArgs.NV_PRIME,
-        glx_vendor  = AppArgs.GLX_VENDOR
+        glx_vendor  = AppArgs.GLX_VENDOR,
+        cp_tf32     = AppArgs.CP_TF32
     )
     
     LoadInstance = LoadModel(InitInstance)

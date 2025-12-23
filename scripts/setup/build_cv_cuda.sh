@@ -2,7 +2,6 @@
 
 # ./scripts/build_cv_cuda.sh
 # run from parent directory
-# currently opencv doesn't support Ninja build system
 # known dependency hell : ffmpeg-free (non-patent ver.) remove && replace with the patented ffmpeg (check ./setup_ffmpeg.sh) <- necessary for performance
 
 # Download NVIDIA GPU Accel. Codec for HW Accel. Video support:
@@ -40,6 +39,7 @@ CUDA_FLAGS="\
 --use_fast_math"
 
 cmake ../thirdparty/opencv \
+  -G Ninja \
   -D CMAKE_BUILD_TYPE=Release \
   -D BUILD_SHARED_LIBS=ON \
   -D ENABLE_CCACHE=ON \
@@ -75,15 +75,17 @@ cmake ../thirdparty/opencv \
   -D ENABLE_CCACHE=ON \
   -D OPENCV_EXTRA_MODULES_PATH=../thirdparty/opencv_contrib/modules \
   -D BUILD_opencv_python3=ON \
+  -D BUILD_opencv_python_bindings_generator=ON \
   -D PYTHON3_EXECUTABLE=$(which python3) \
-  -D PYTHON3_INCLUDE_DIR=$(python3 -c "from sysconfig import get_paths; print(get_paths()['include'])") \
-  -D PYTHON3_LIBRARY=$(python3 -c "import sysconfig; print(sysconfig.get_config_var('LIBPL') + '/libpython${PY_ABI}.so')") \
-  -D PYTHON3_PACKAGES_PATH=$(python3 -c "import site; print(site.getsitepackages()[0])") \
   -D CMAKE_INSTALL_PREFIX=$VIRTUAL_ENV \
-  -D PYTHON3_PACKAGES_PATH=$VIRTUAL_ENV/lib/python3.13/site-packages
+  -D PYTHON_LIBRARIES=/usr/local/lib/libpython${PY_ABI}.so \
+  -D PYTHON3_INCLUDE_DIR=/usr/local/include/python${PY_ABI} \
+  -D PYTHON3_LIBRARY=/usr/local/lib/libpython${PY_ABI}.so \
+  -D PYTHON3_PACKAGES_PATH=$(python3 -c "import site; print(site.getsitepackages()[0])") \
 
-make -j$(nproc)
-make install
+
+ninja -j$(nproc)
+ninja install
 
 export PYTHONPATH=$PYTHONPATH:$HOME/Tesseract-VX/build_opencv/lib/python3
 

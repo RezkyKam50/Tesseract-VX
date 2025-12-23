@@ -4,6 +4,7 @@ class AppArgs:
     QT_PLATFORM = "xcb"     # options: "xcb", "offscreen"
     NV_PRIME    = False     # for hybrid boards (NVIDIA Optimus)
     GLX_VENDOR  = "nvidia"  # options: "nvidia"
+    CP_TF32     = 1         # Enable Cupy TF32 mode
 
 class ModelArgs:
     # ByteTrack Model
